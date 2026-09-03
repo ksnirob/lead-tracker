@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lead Tracker Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-group">
+      <div class="brand-mark">LT</div>
+      <div>
+        <p class="eyebrow">LOCAL EXCEL CRM</p>
+        <h1>Leadroom</h1>
+        <span class="header-subtitle">Website redesign outreach tracker</span>
+      </div>
+    </div>
+    <div class="file-actions">
+      <span class="save-state" id="saveState">No workbook selected</span>
+      <label class="autosave-control" title="Save changes automatically when your browser has write permission">
+        <input type="checkbox" id="autoSaveToggle" checked>
+        <span>Auto-save</span>
+      </label>
+      <button class="secondary-button" id="openFileButton" type="button">Open Excel</button>
+      <button class="primary-button" id="saveButton" type="button" disabled>Save</button>
+      <button class="secondary-button" id="downloadButton" type="button" disabled>Download copy</button>
+      <input id="fileInput" type="file" accept=".xlsx,.xls" hidden>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="toolbar" aria-label="Search and filters">
+      <label class="search-field">
+        <span>Search</span>
+        <input id="searchInput" type="search" placeholder="Company, website, email, or phone">
+      </label>
+      <label class="filter-field">
+        <span>Status</span>
+        <select id="statusFilter">
+          <option value="all">All statuses</option>
+          <option value="Draft">Draft</option>
+          <option value="Sent">Sent</option>
+          <option value="Replied">Replied</option>
+          <option value="Closed">Closed</option>
+        </select>
+      </label>
+      <div class="workbook-chip" id="workbookChip">Place your workbook in the excel folder, or choose it once.</div>
+    </section>
+
+    <section class="pipeline-strip" aria-label="Pipeline progress">
+      <div class="pipeline-copy">
+        <span>Pipeline</span>
+        <strong id="pipelineSummary">Load leads to see your outreach flow</strong>
+      </div>
+      <div class="pipeline-track" id="pipelineTrack">
+        <span></span>
+      </div>
+    </section>
+
+    <section class="stats-grid" aria-label="Lead status totals">
+      <article class="stat-card" data-filter="all" tabindex="0">
+        <span>Total leads</span>
+        <strong id="totalCount">0</strong>
+      </article>
+      <article class="stat-card status-draft" data-filter="Draft" tabindex="0">
+        <span>Draft</span>
+        <strong id="draftCount">0</strong>
+      </article>
+      <article class="stat-card status-first" data-filter="Sent" tabindex="0">
+        <span>Sent</span>
+        <strong id="firstCount">0</strong>
+      </article>
+      <article class="stat-card status-follow" data-filter="Replied" tabindex="0">
+        <span>Replied</span>
+        <strong id="followCount">0</strong>
+      </article>
+      <article class="stat-card status-closed" data-filter="Closed" tabindex="0">
+        <span>Closed</span>
+        <strong id="closedCount">0</strong>
+      </article>
+    </section>
+
+    <section class="table-panel crm-workspace">
+      <div class="table-panel-header">
+        <div>
+          <p class="eyebrow">LEADS</p>
+          <h2>Outreach records <span id="resultCount">0</span></h2>
+        </div>
+      </div>
+      <div class="workspace-grid">
+        <div class="sheet-pane">
+          <table class="excel-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Website</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>1st</th>
+                <th>FU1</th>
+                <th>FU2</th>
+                <th>Lead Status</th>
+              </tr>
+            </thead>
+            <tbody id="leadsBody">
+              <tr>
+                <td colspan="8" class="empty-state">Loading workbook...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="table-footer" id="tableFooter">Showing 0 of 0 leads</div>
+    </section>
+  </main>
+
+  <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+  <aside class="lead-detail-panel drawer-panel" id="leadDetail" aria-live="polite" aria-label="Lead details">
+    <div class="empty-state">Select a lead to view outreach details.</div>
+  </aside>
+
+  <dialog class="message-modal" id="messageModal">
+    <form method="dialog" class="modal-card">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow" id="modalCompany">MESSAGE</p>
+          <h2 id="modalTitle">Email message</h2>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Close modal" type="submit">x</button>
+      </div>
+      <pre id="modalMessage"></pre>
+      <div class="modal-actions">
+        <button class="secondary-button" id="copyMessageButton" type="button">Copy</button>
+        <button class="primary-button" value="cancel" type="submit">Close</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
