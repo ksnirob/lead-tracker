@@ -1063,7 +1063,9 @@ h3 {
 }
 
 .modal-subject {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 5px;
   padding: 15px 22px;
   border-bottom: 1px solid var(--line);
@@ -1075,6 +1077,8 @@ h3 {
 }
 
 .modal-subject span {
+  display: block;
+  margin-bottom: 5px;
   color: var(--muted);
   font-size: 10px;
   font-weight: 850;
@@ -1083,9 +1087,27 @@ h3 {
 }
 
 .modal-subject strong {
+  display: block;
   color: var(--ink);
   font-size: 14px;
   line-height: 1.4;
+}
+
+.subject-copy-button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.subject-copy-button:hover {
+  border-color: var(--green);
+  background: var(--green-soft);
 }
 
 #modalMessage {

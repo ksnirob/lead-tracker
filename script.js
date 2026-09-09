@@ -107,6 +107,7 @@ const dom = {
   modalSubjectRow: document.getElementById('modalSubjectRow'),
   modalSubject: document.getElementById('modalSubject'),
   modalMessage: document.getElementById('modalMessage'),
+  copySubjectButton: document.getElementById('copySubjectButton'),
   copyMessageButton: document.getElementById('copyMessageButton')
 };
 
@@ -1064,12 +1065,18 @@ function closeDrawer() {
 }
 
 dom.copyMessageButton.addEventListener('click', async () => {
-  const subject = dom.modalSubject.textContent;
-  const message = dom.modalMessage.textContent;
-  await navigator.clipboard.writeText(subject ? `Subject: ${subject}\n\n${message}` : message);
+  await navigator.clipboard.writeText(dom.modalMessage.textContent);
   dom.copyMessageButton.textContent = 'Copied';
   window.setTimeout(() => {
-    dom.copyMessageButton.textContent = 'Copy';
+    dom.copyMessageButton.textContent = 'Copy email';
+  }, 1000);
+});
+
+dom.copySubjectButton.addEventListener('click', async () => {
+  await navigator.clipboard.writeText(dom.modalSubject.textContent);
+  dom.copySubjectButton.textContent = 'Copied';
+  window.setTimeout(() => {
+    dom.copySubjectButton.textContent = 'Copy subject';
   }, 1000);
 });
 
