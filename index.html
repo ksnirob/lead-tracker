@@ -6,29 +6,31 @@
   <title>Lead Tracker Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="app-header">
-    <div class="brand-group">
-      <div class="brand-mark">LT</div>
-      <div>
-        <p class="eyebrow">LOCAL EXCEL CRM</p>
-        <h1>Leadroom</h1>
-        <span class="header-subtitle">Website redesign outreach tracker</span>
+    <div class="header-inner">
+      <div class="brand-group">
+        <div class="brand-mark">LT</div>
+        <div>
+          <p class="eyebrow">LOCAL EXCEL CRM</p>
+          <h1>Leadroom</h1>
+          <span class="header-subtitle">Website redesign outreach tracker</span>
+        </div>
       </div>
-    </div>
-    <div class="file-actions">
-      <span class="save-state" id="saveState">No workbook selected</span>
-      <label class="autosave-control" title="Save changes automatically when your browser has write permission">
-        <input type="checkbox" id="autoSaveToggle" checked>
-        <span>Auto-save</span>
-      </label>
-      <button class="secondary-button" id="openFileButton" type="button">Open Excel</button>
-      <button class="primary-button" id="saveButton" type="button" disabled>Save</button>
-      <button class="secondary-button" id="downloadButton" type="button" disabled>Download copy</button>
-      <input id="fileInput" type="file" accept=".xlsx,.xls" hidden>
+      <div class="file-actions">
+        <span class="save-state" id="saveState">No workbook selected</span>
+        <label class="autosave-control" title="Save changes automatically when your browser has write permission">
+          <input type="checkbox" id="autoSaveToggle" checked>
+          <span>Auto-save</span>
+        </label>
+        <button class="secondary-button" id="openFileButton" type="button">Open Excel files</button>
+        <button class="primary-button" id="saveButton" type="button" disabled>Save</button>
+        <button class="secondary-button" id="downloadButton" type="button" disabled>Download copy</button>
+        <input id="fileInput" type="file" accept=".xlsx,.xls" multiple hidden>
+      </div>
     </div>
   </header>
 
@@ -43,9 +45,12 @@
         <select id="statusFilter">
           <option value="all">All statuses</option>
           <option value="Draft">Draft</option>
-          <option value="Sent">Sent</option>
+          <option value="firstEmail">1st Email Sent</option>
+          <option value="followUp1">Follow Up 1</option>
+          <option value="followUp2">Follow Up 2</option>
           <option value="Replied">Replied</option>
-          <option value="Closed">Closed</option>
+          <option value="Win">Win</option>
+          <option value="Lost">Lost</option>
         </select>
       </label>
       <div class="workbook-chip" id="workbookChip">Place your workbook in the excel folder, or choose it once.</div>
@@ -62,25 +67,45 @@
     </section>
 
     <section class="stats-grid" aria-label="Lead status totals">
-      <article class="stat-card" data-filter="all" tabindex="0">
-        <span>Total leads</span>
+      <article class="stat-card status-total" data-filter="all" tabindex="0">
+        <div class="stat-card-heading"><span>Total leads</span><b>ALL</b></div>
         <strong id="totalCount">0</strong>
+        <small>In your pipeline</small>
       </article>
       <article class="stat-card status-draft" data-filter="Draft" tabindex="0">
-        <span>Draft</span>
+        <div class="stat-card-heading"><span>Draft</span><b>00</b></div>
         <strong id="draftCount">0</strong>
+        <small>Not contacted</small>
       </article>
-      <article class="stat-card status-first" data-filter="Sent" tabindex="0">
-        <span>Sent</span>
+      <article class="stat-card status-first" data-filter="firstEmail" tabindex="0">
+        <div class="stat-card-heading"><span>1st Email Sent</span><b>01</b></div>
         <strong id="firstCount">0</strong>
+        <small>Initial outreach</small>
       </article>
-      <article class="stat-card status-follow" data-filter="Replied" tabindex="0">
-        <span>Replied</span>
-        <strong id="followCount">0</strong>
+      <article class="stat-card status-follow-one" data-filter="followUp1" tabindex="0">
+        <div class="stat-card-heading"><span>Follow Up 1</span><b>02</b></div>
+        <strong id="followUp1Count">0</strong>
+        <small>First reminder</small>
       </article>
-      <article class="stat-card status-closed" data-filter="Closed" tabindex="0">
-        <span>Closed</span>
-        <strong id="closedCount">0</strong>
+      <article class="stat-card status-follow-two" data-filter="followUp2" tabindex="0">
+        <div class="stat-card-heading"><span>Follow Up 2</span><b>03</b></div>
+        <strong id="followUp2Count">0</strong>
+        <small>Final reminder</small>
+      </article>
+      <article class="stat-card status-replied" data-filter="Replied" tabindex="0">
+        <div class="stat-card-heading"><span>Replied</span><b>↗</b></div>
+        <strong id="repliedCount">0</strong>
+        <small>Responses received</small>
+      </article>
+      <article class="stat-card status-win" data-filter="Win" tabindex="0">
+        <div class="stat-card-heading"><span>Win</span><b>✓</b></div>
+        <strong id="winCount">0</strong>
+        <small>Converted leads</small>
+      </article>
+      <article class="stat-card status-lost" data-filter="Lost" tabindex="0">
+        <div class="stat-card-heading"><span>Lost</span><b>×</b></div>
+        <strong id="lostCount">0</strong>
+        <small>Did not convert</small>
       </article>
     </section>
 
@@ -131,6 +156,10 @@
           <h2 id="modalTitle">Email message</h2>
         </div>
         <button class="icon-button" value="cancel" aria-label="Close modal" type="submit">x</button>
+      </div>
+      <div class="modal-subject" id="modalSubjectRow">
+        <span>Subject</span>
+        <strong id="modalSubject"></strong>
       </div>
       <pre id="modalMessage"></pre>
       <div class="modal-actions">

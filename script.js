@@ -1,4 +1,10 @@
-const DEFAULT_WORKBOOK_PATH = 'excel/Leads_Completed_Tracker.xlsx';
+const DEFAULT_WORKBOOK_PATHS = [
+  'excel/Batch_01_Leads_Tracker.xlsx',
+  'excel/Batch_02_Leads_Tracker.xlsx',
+  'excel/Batch_03_Leads_Tracker.xlsx',
+  'excel/Batch_04_Leads_Tracker.xlsx',
+  'excel/Batch_05_Leads_Tracker.xlsx'
+];
 const FALLBACK_WORKBOOK_NAME = 'leads-tracker.xlsx';
 const HANDLE_DB = 'lead-tracker-file-handles';
 const HANDLE_STORE = 'handles';
@@ -11,9 +17,17 @@ const STATUS_OPTIONS = [
   'Closed'
 ];
 
+const PIPELINE_STATUSES = [
+  'Draft',
+  'Sent',
+  'Replied',
+  'Win',
+  'Lost'
+];
+
 const LEAD_STATUS_OPTIONS = [
   'Win',
-  'Closed'
+  'Lost'
 ];
 
 const REQUIRED_HEADERS = [
@@ -22,12 +36,15 @@ const REQUIRED_HEADERS = [
   'Email',
   'Phone',
   'Social Links',
+  '1st Email Subject',
   '1st Email',
   'Status',
   'Dates',
+  'Follow Up 1 Subject',
   'Follow Up 1',
   'Status',
   'Dates',
+  'Follow Up 2 Subject',
   'Follow Up 2',
   'Status',
   'Dates',
@@ -40,8 +57,11 @@ const HEADER_ALIASES = {
   email: ['Email', 'Email Address'],
   contactNumber: ['Phone', 'Contact Number', 'Contact', 'Phone Number'],
   socialMediaLinks: ['Social Links', 'Social / Associated Profile Links', 'Social Media Links', 'Social Media'],
+  firstEmailSubject: ['1st Email Subject', 'First Email Subject'],
   firstEmailMessage: ['1st Email', '1st Email Message', 'First Email Message'],
+  followUpEmail1Subject: ['Follow Up 1 Subject', 'Follow-up 1 Subject', 'Followup 1 Subject'],
   followUpEmail1Message: ['Follow Up 1', 'Follow Up Email 1 Message', 'Follow-up 1', 'Followup 1'],
+  followUpEmail2Subject: ['Follow Up 2 Subject', 'Follow-up 2 Subject', 'Followup 2 Subject'],
   followUpEmail2Message: ['Follow Up 2', 'Follow Up Email 2 Message', 'Follow-up 2', 'Followup 2'],
   firstEmailStatus: ['1st Email Status', 'First Email Status'],
   followUp1Status: ['Follow Up 1 Status', 'Follow-up 1 Status', 'Followup 1 Status'],
@@ -54,7 +74,7 @@ const HEADER_ALIASES = {
 
 const PRICING_COPY = 'The redesign can be kept affordable, usually around $200 to $800 depending on what you need. You do not need to pay anything upfront. Payment is only after the website is delivered and you are happy with the result.';
 const STATUS_VALIDATION_FORMULA = '"Draft,Sent,Replied,Closed"';
-const LEAD_STATUS_VALIDATION_FORMULA = '"Win,Closed"';
+const LEAD_STATUS_VALIDATION_FORMULA = '"Win,Lost"';
 
 const dom = {
   leadsBody: document.getElementById('leadsBody'),
@@ -76,18 +96,22 @@ const dom = {
   totalCount: document.getElementById('totalCount'),
   draftCount: document.getElementById('draftCount'),
   firstCount: document.getElementById('firstCount'),
-  followCount: document.getElementById('followCount'),
-  closedCount: document.getElementById('closedCount'),
+  followUp1Count: document.getElementById('followUp1Count'),
+  followUp2Count: document.getElementById('followUp2Count'),
+  repliedCount: document.getElementById('repliedCount'),
+  winCount: document.getElementById('winCount'),
+  lostCount: document.getElementById('lostCount'),
   modal: document.getElementById('messageModal'),
   modalCompany: document.getElementById('modalCompany'),
   modalTitle: document.getElementById('modalTitle'),
+  modalSubjectRow: document.getElementById('modalSubjectRow'),
+  modalSubject: document.getElementById('modalSubject'),
   modalMessage: document.getElementById('modalMessage'),
   copyMessageButton: document.getElementById('copyMessageButton')
 };
 
 let leads = [];
-let workbookName = FALLBACK_WORKBOOK_NAME;
-let fileHandle = null;
+let workbookSources = [];
 let dirty = false;
 let autosaveTimer = null;
 let selectedLeadId = null;
@@ -115,8 +139,16 @@ function normalizeLeadStatus(value) {
   const raw = normalizeText(value);
   const lower = raw.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ');
   if (lower === 'win' || lower === 'won') return 'Win';
-  if (lower === 'closed' || lower === 'lost' || lower === 'not interested') return 'Closed';
+  if (lower === 'closed' || lower === 'lost' || lower === 'not interested') return 'Lost';
   return LEAD_STATUS_OPTIONS.includes(raw) ? raw : '';
+}
+
+function splitSubjectFromMessage(value) {
+  const message = normalizeText(value);
+  const match = message.match(/^Subject:\s*([^\r\n]+)(?:\r?\n)+([\s\S]*)$/i);
+  return match
+    ? { subject: normalizeText(match[1]), message: normalizeText(match[2]) }
+    : { subject: '', message };
 }
 
 function normalizeDate(value) {
@@ -282,30 +314,51 @@ function socialTextLabels(value) {
 }
 
 function currentStatus(lead) {
-  if (lead.leadStatus === 'Win') return 'Closed';
-  if (lead.leadStatus === 'Closed') return 'Closed';
-  if (lead.firstEmailStatus === 'Closed' || lead.followUp1Status === 'Closed' || lead.followUp2Status === 'Closed') return 'Closed';
+  if (lead.leadStatus === 'Win') return 'Win';
+  if (lead.leadStatus === 'Lost') return 'Lost';
+  if (lead.firstEmailStatus === 'Closed' || lead.followUp1Status === 'Closed' || lead.followUp2Status === 'Closed') return 'Lost';
   if (lead.firstEmailStatus === 'Replied' || lead.followUp1Status === 'Replied' || lead.followUp2Status === 'Replied') return 'Replied';
   if (lead.firstEmailStatus === 'Sent' || lead.followUp1Status === 'Sent' || lead.followUp2Status === 'Sent' || lead.firstEmailDate || lead.followUp1Date || lead.followUp2Date) return 'Sent';
   return 'Draft';
 }
 
-function mapRows(rows) {
-  const headers = rows[0] || [];
+function hasCompletedStage(lead, statusField, dateField) {
+  return lead[statusField] !== 'Draft' || Boolean(lead[dateField]);
+}
+
+function matchesStatusFilter(lead, filter) {
+  if (filter === 'all') return true;
+  if (filter === 'firstEmail') return hasCompletedStage(lead, 'firstEmailStatus', 'firstEmailDate');
+  if (filter === 'followUp1') return hasCompletedStage(lead, 'followUp1Status', 'followUp1Date');
+  if (filter === 'followUp2') return hasCompletedStage(lead, 'followUp2Status', 'followUp2Date');
+  return currentStatus(lead) === filter;
+}
+
+function mapRows(rows, sourceId) {
+  const headerRowIndex = rows.findIndex(row => row.some(value => normalizeText(value) === 'Name'));
+  const headers = rows[headerRowIndex] || [];
   const indexes = compactIndexes(headers);
 
   return rows
-    .slice(1)
-    .map((row, index) => ({
+    .slice(headerRowIndex + 1)
+    .map((row, index) => {
+      const firstEmail = splitSubjectFromMessage(getByIndex(row, indexes, 'firstEmailMessage'));
+      const followUp1 = splitSubjectFromMessage(getByIndex(row, indexes, 'followUpEmail1Message'));
+      const followUp2 = splitSubjectFromMessage(getByIndex(row, indexes, 'followUpEmail2Message'));
+      return {
       id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}`,
+      sourceId,
       companyName: normalizeText(getByIndex(row, indexes, 'companyName')),
       website: normalizeText(getByIndex(row, indexes, 'website')),
       email: normalizeText(getByIndex(row, indexes, 'email')),
       contactNumber: normalizeText(getByIndex(row, indexes, 'contactNumber')),
       socialMediaLinks: sanitizeSocialLinks(getByIndex(row, indexes, 'socialMediaLinks')),
-      firstEmailMessage: normalizeText(getByIndex(row, indexes, 'firstEmailMessage')),
-      followUpEmail1Message: normalizeText(getByIndex(row, indexes, 'followUpEmail1Message')),
-      followUpEmail2Message: normalizeText(getByIndex(row, indexes, 'followUpEmail2Message')),
+      firstEmailSubject: normalizeText(getByIndex(row, indexes, 'firstEmailSubject')) || firstEmail.subject,
+      firstEmailMessage: firstEmail.message,
+      followUpEmail1Subject: normalizeText(getByIndex(row, indexes, 'followUpEmail1Subject')) || followUp1.subject,
+      followUpEmail1Message: followUp1.message,
+      followUpEmail2Subject: normalizeText(getByIndex(row, indexes, 'followUpEmail2Subject')) || followUp2.subject,
+      followUpEmail2Message: followUp2.message,
       firstEmailStatus: normalizeStatus(getByIndex(row, indexes, 'firstEmailStatus')),
       followUp1Status: normalizeStatus(getByIndex(row, indexes, 'followUp1Status')),
       followUp2Status: normalizeStatus(getByIndex(row, indexes, 'followUp2Status')),
@@ -313,24 +366,34 @@ function mapRows(rows) {
       followUp1Date: normalizeDate(getByIndex(row, indexes, 'followUp1Date')),
       followUp2Date: normalizeDate(getByIndex(row, indexes, 'followUp2Date')),
       leadStatus: normalizeLeadStatus(getByIndex(row, indexes, 'leadStatus'))
-    }))
+      };
+    })
     .filter(lead => lead.companyName || lead.website || lead.email);
 }
 
-function readWorkbook(arrayBuffer, name, handle = null) {
+function parseWorkbook(arrayBuffer, name, handle = null) {
   const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: false });
   const sheetName = workbook.Sheets.Leads ? 'Leads' : workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
-  leads = mapRows(rows);
+  const sourceId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${name}`;
+  return {
+    source: { id: sourceId, name: name || FALLBACK_WORKBOOK_NAME, handle },
+    leads: mapRows(rows, sourceId)
+  };
+}
+
+function readWorkbooks(entries) {
+  const parsed = entries.map(entry => parseWorkbook(entry.arrayBuffer, entry.name, entry.handle));
+  workbookSources = parsed.map(item => item.source);
+  leads = parsed.flatMap(item => item.leads);
   selectedLeadId = leads[0]?.id || null;
-  workbookName = name || FALLBACK_WORKBOOK_NAME;
-  fileHandle = handle;
   dirty = false;
   dom.saveButton.disabled = !leads.length;
   dom.downloadButton.disabled = !leads.length;
-  setStatus(`${leads.length} leads loaded`);
-  dom.workbookChip.textContent = handle ? `Connected to ${workbookName}` : `Loaded ${workbookName}`;
+  const connected = workbookSources.every(source => source.handle);
+  setStatus(`${leads.length} leads from ${workbookSources.length} workbook${workbookSources.length === 1 ? '' : 's'}`);
+  dom.workbookChip.textContent = `${connected ? 'Connected to' : 'Loaded'} ${workbookSources.length} workbook${workbookSources.length === 1 ? '' : 's'}`;
   render();
 }
 
@@ -338,21 +401,23 @@ async function loadDefaultWorkbook() {
   if (window.location.protocol === 'file:') {
     setStatus('Open with localhost to auto-load Excel');
     dom.workbookChip.textContent = 'Browser security blocks automatic folder reads from file://. Use http://127.0.0.1:8000.';
-    dom.leadsBody.innerHTML = '<tr><td colspan="8" class="empty-state">Open this tracker from the local server URL to load excel/London_25_Leads_and_Followups.xlsx automatically, or click Open Excel once.</td></tr>';
+    dom.leadsBody.innerHTML = '<tr><td colspan="8" class="empty-state">Open this tracker from the local server URL to load the Excel folder automatically, or click Open Excel files.</td></tr>';
     dom.leadDetail.innerHTML = '<div class="empty-state">Choose the Excel file once to edit lead details here.</div>';
     return;
   }
 
   try {
-    const response = await fetch(`${DEFAULT_WORKBOOK_PATH}?v=${Date.now()}`, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`Workbook request returned ${response.status}.`);
-    const arrayBuffer = await response.arrayBuffer();
-    readWorkbook(arrayBuffer, DEFAULT_WORKBOOK_PATH.split('/').pop());
+    const entries = await Promise.all(DEFAULT_WORKBOOK_PATHS.map(async path => {
+      const response = await fetch(`${path}?v=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`${path} returned ${response.status}.`);
+      return { arrayBuffer: await response.arrayBuffer(), name: path.split('/').pop(), handle: null };
+    }));
+    readWorkbooks(entries);
   } catch (error) {
     console.error('Default workbook load failed:', error);
     setStatus('Excel folder file did not load');
-    dom.workbookChip.textContent = DEFAULT_WORKBOOK_PATH;
-    dom.leadsBody.innerHTML = '<tr><td colspan="8" class="empty-state">Could not load excel/London_25_Leads_and_Followups.xlsx automatically. Start the local server from this folder, then open http://127.0.0.1:8000.</td></tr>';
+    dom.workbookChip.textContent = 'Excel folder';
+    dom.leadsBody.innerHTML = '<tr><td colspan="8" class="empty-state">Could not load the Excel folder automatically. Start the local server from this folder, then open http://127.0.0.1:8000.</td></tr>';
     dom.leadDetail.innerHTML = '<div class="empty-state">Workbook details will appear here after loading.</div>';
   }
 }
@@ -367,7 +432,7 @@ function filteredLeads() {
   return leads.filter(lead => {
     const haystack = `${lead.companyName} ${lead.website} ${lead.email} ${lead.contactNumber}`.toLowerCase();
     const matchesSearch = !query || haystack.includes(query);
-    const matchesFilter = filter === 'all' || currentStatus(lead) === filter;
+    const matchesFilter = matchesStatusFilter(lead, filter);
     return matchesSearch && matchesFilter;
   });
 }
@@ -393,15 +458,22 @@ function render() {
 }
 
 function renderStats() {
-  const totals = STATUS_OPTIONS.reduce((memo, status) => ({ ...memo, [status]: 0 }), {});
+  const totals = PIPELINE_STATUSES.reduce((memo, status) => ({ ...memo, [status]: 0 }), {});
+  const stages = { firstEmail: 0, followUp1: 0, followUp2: 0 };
   leads.forEach(lead => {
     totals[currentStatus(lead)] += 1;
+    if (hasCompletedStage(lead, 'firstEmailStatus', 'firstEmailDate')) stages.firstEmail += 1;
+    if (hasCompletedStage(lead, 'followUp1Status', 'followUp1Date')) stages.followUp1 += 1;
+    if (hasCompletedStage(lead, 'followUp2Status', 'followUp2Date')) stages.followUp2 += 1;
   });
   dom.totalCount.textContent = leads.length;
   dom.draftCount.textContent = totals.Draft;
-  dom.firstCount.textContent = totals.Sent;
-  dom.followCount.textContent = totals.Replied;
-  dom.closedCount.textContent = totals.Closed;
+  dom.firstCount.textContent = stages.firstEmail;
+  dom.followUp1Count.textContent = stages.followUp1;
+  dom.followUp2Count.textContent = stages.followUp2;
+  dom.repliedCount.textContent = totals.Replied;
+  dom.winCount.textContent = totals.Win;
+  dom.lostCount.textContent = totals.Lost;
   renderPipeline(totals);
   document.querySelectorAll('.stat-card[data-filter]').forEach(card => {
     card.classList.toggle('active', card.dataset.filter === dom.statusFilter.value);
@@ -417,8 +489,8 @@ function renderPipeline(totals) {
 
   const active = leads.length - totals.Draft;
   const activePercent = Math.round((active / leads.length) * 100);
-  dom.pipelineSummary.textContent = `${active} active, ${totals.Replied} replied, ${totals.Closed} closed`;
-  dom.pipelineTrack.innerHTML = STATUS_OPTIONS.map(status => {
+  dom.pipelineSummary.textContent = `${active} active · ${totals.Replied} replied · ${totals.Win} won · ${totals.Lost} lost`;
+  dom.pipelineTrack.innerHTML = PIPELINE_STATUSES.map(status => {
     const width = (totals[status] / leads.length) * 100;
     return `<span class="${statusClass(status)}" style="width:${width}%"></span>`;
   }).join('');
@@ -498,9 +570,9 @@ function renderLeadDetail(lead) {
     </label>
 
     <div class="stage-grid detail-stages">
-      ${stageCard(lead, '1st Email', 'firstEmailMessage', 'firstEmailStatus', 'firstEmailDate', 'View 1st Email')}
-      ${stageCard(lead, 'Follow Up 1', 'followUpEmail1Message', 'followUp1Status', 'followUp1Date', 'View Follow Up 1')}
-      ${stageCard(lead, 'Follow Up 2', 'followUpEmail2Message', 'followUp2Status', 'followUp2Date', 'View Follow Up 2')}
+      ${stageCard(lead, '1st Email', 'firstEmailMessage', 'firstEmailStatus', 'firstEmailDate')}
+      ${stageCard(lead, 'Follow Up 1', 'followUpEmail1Message', 'followUp1Status', 'followUp1Date')}
+      ${stageCard(lead, 'Follow Up 2', 'followUpEmail2Message', 'followUp2Status', 'followUp2Date')}
     </div>
 `;
 }
@@ -543,12 +615,12 @@ function contactItem(label, value, className = '') {
   `;
 }
 
-function stageCard(lead, title, messageField, statusField, dateFieldName, buttonLabel) {
+function stageCard(lead, title, messageField, statusField, dateFieldName) {
   return `
     <section class="stage-card">
       <div class="stage-heading">
         <span>${title}</span>
-        ${messageButton(lead, messageField, buttonLabel)}
+        ${messageButton(lead, messageField, 'Email')}
       </div>
       <div class="stage-controls">
         <label>
@@ -626,7 +698,7 @@ function applyAutomaticDate(lead, field, status) {
 function updateLeadStatus(lead, field) {
   if (field === 'leadStatus') return;
   if (lead.firstEmailStatus === 'Closed' || lead.followUp1Status === 'Closed' || lead.followUp2Status === 'Closed') {
-    lead.leadStatus = 'Closed';
+    lead.leadStatus = 'Lost';
   }
 }
 
@@ -639,19 +711,24 @@ function markDirty() {
   }
 }
 
-function toWorkbookRows() {
-  return leads.map(lead => [
+function toWorkbookRows(sourceId = null) {
+  return leads
+    .filter(lead => !sourceId || lead.sourceId === sourceId)
+    .map(lead => [
     lead.companyName,
     lead.website,
     lead.email,
     lead.contactNumber,
     sanitizeSocialLinks(lead.socialMediaLinks),
+    lead.firstEmailSubject,
     lead.firstEmailMessage,
     lead.firstEmailStatus,
     lead.firstEmailDate,
+    lead.followUpEmail1Subject,
     addPricingCopyIfUseful(lead.followUpEmail1Message),
     lead.followUp1Status,
     lead.followUp1Date,
+    lead.followUpEmail2Subject,
     addPricingCopyIfUseful(lead.followUpEmail2Message),
     lead.followUp2Status,
     lead.followUp2Date,
@@ -666,10 +743,10 @@ function addPricingCopyIfUseful(message) {
   return `${text}\n\n${PRICING_COPY}`;
 }
 
-async function buildWorkbookArray() {
-  const worksheet = XLSX.utils.aoa_to_sheet([REQUIRED_HEADERS, ...toWorkbookRows()]);
+async function buildWorkbookArray(sourceId = null) {
+  const worksheet = XLSX.utils.aoa_to_sheet([REQUIRED_HEADERS, ...toWorkbookRows(sourceId)]);
   worksheet['!cols'] = [
-    18, 30, 30, 18, 24, 52, 18, 15, 52, 18, 15, 52, 18, 15, 20
+    18, 30, 30, 18, 24, 36, 52, 18, 15, 36, 52, 18, 15, 36, 52, 18, 15, 20
   ].map(width => ({ wch: width }));
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Leads');
@@ -690,8 +767,8 @@ async function addExcelDropdownValidation(output) {
 
   const validationXml = [
     '<dataValidations count="2">',
-    `<dataValidation type="list" allowBlank="0" showErrorMessage="1" sqref="G2:G1000 J2:J1000 M2:M1000"><formula1>${escapeXml(STATUS_VALIDATION_FORMULA)}</formula1></dataValidation>`,
-    `<dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="O2:O1000"><formula1>${escapeXml(LEAD_STATUS_VALIDATION_FORMULA)}</formula1></dataValidation>`,
+    `<dataValidation type="list" allowBlank="0" showErrorMessage="1" sqref="H2:H1000 L2:L1000 P2:P1000"><formula1>${escapeXml(STATUS_VALIDATION_FORMULA)}</formula1></dataValidation>`,
+    `<dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="R2:R1000"><formula1>${escapeXml(LEAD_STATUS_VALIDATION_FORMULA)}</formula1></dataValidation>`,
     '</dataValidations>'
   ].join('');
 
@@ -730,7 +807,7 @@ async function chooseSaveHandle() {
   if (!('showSaveFilePicker' in window)) return null;
 
   const handle = await window.showSaveFilePicker({
-    suggestedName: workbookName || FALLBACK_WORKBOOK_NAME,
+    suggestedName: workbookSources[0]?.name || FALLBACK_WORKBOOK_NAME,
     types: [{
       description: 'Excel workbooks',
       accept: {
@@ -738,7 +815,7 @@ async function chooseSaveHandle() {
       }
     }]
   });
-  await saveHandle(handle);
+  await saveHandles([handle]);
   return handle;
 }
 
@@ -747,30 +824,34 @@ async function saveWorkbook({ quiet = false } = {}) {
   let output = null;
 
   try {
-    output = await buildWorkbookArray();
-
-    if (fileHandle && await verifyFilePermission(fileHandle, 'readwrite')) {
-      await writeWorkbookToHandle(fileHandle, output);
+    const connectedSources = workbookSources.filter(source => source.handle);
+    if (connectedSources.length === workbookSources.length) {
+      for (const source of connectedSources) {
+        if (!await verifyFilePermission(source.handle, 'readwrite')) throw new Error(`Write permission denied for ${source.name}.`);
+        await writeWorkbookToHandle(source.handle, await buildWorkbookArray(source.id));
+      }
       dirty = false;
-      setStatus(quiet ? 'Auto-saved' : 'Saved to Excel');
+      setStatus(quiet ? `Auto-saved ${connectedSources.length} workbooks` : `Saved ${connectedSources.length} workbooks`);
       return;
     }
 
     if (!quiet) {
-      const pickedHandle = await chooseSaveHandle();
-      if (pickedHandle) {
+      if (workbookSources.length === 1 && 'showSaveFilePicker' in window) {
+        output = await buildWorkbookArray(workbookSources[0].id);
+        const pickedHandle = await chooseSaveHandle();
         await writeWorkbookToHandle(pickedHandle, output);
-        fileHandle = pickedHandle;
-        workbookName = pickedHandle.name || workbookName;
+        workbookSources[0].handle = pickedHandle;
+        workbookSources[0].name = pickedHandle.name || workbookSources[0].name;
         dirty = false;
-        dom.workbookChip.textContent = `Connected to ${workbookName}`;
+        dom.workbookChip.textContent = 'Connected to 1 workbook';
         setStatus('Saved to Excel');
         return;
       }
 
+      output = await buildWorkbookArray();
       await downloadWorkbook(output);
       dirty = false;
-      setStatus('Downloaded updated copy');
+      setStatus('Downloaded combined updated copy');
     } else {
       setStatus('Auto-save needs Open Excel permission');
     }
@@ -793,7 +874,8 @@ async function saveWorkbook({ quiet = false } = {}) {
 async function downloadWorkbook(output) {
   const workbookOutput = output || await buildWorkbookArray();
   const link = document.createElement('a');
-  const safeName = workbookName.replace(/\.(xlsx|xls)$/i, '') || 'leads-tracker';
+  const baseName = workbookSources.length === 1 ? workbookSources[0].name : 'all-leads';
+  const safeName = baseName.replace(/\.(xlsx|xls)$/i, '') || 'leads-tracker';
   link.href = URL.createObjectURL(new Blob([workbookOutput], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   link.download = `${safeName}-updated.xlsx`;
   document.body.appendChild(link);
@@ -804,8 +886,8 @@ async function downloadWorkbook(output) {
 
 async function openFile() {
   if ('showOpenFilePicker' in window) {
-    const [handle] = await window.showOpenFilePicker({
-      multiple: false,
+    const handles = await window.showOpenFilePicker({
+      multiple: true,
       types: [{
         description: 'Excel workbooks',
         accept: {
@@ -814,9 +896,12 @@ async function openFile() {
         }
       }]
     });
-    const file = await handle.getFile();
-    await saveHandle(handle);
-    readWorkbook(await file.arrayBuffer(), file.name, handle);
+    const entries = await Promise.all(handles.map(async handle => {
+      const file = await handle.getFile();
+      return { arrayBuffer: await file.arrayBuffer(), name: file.name, handle };
+    }));
+    await saveHandles(handles);
+    readWorkbooks(entries);
     return;
   }
   dom.fileInput.click();
@@ -831,31 +916,38 @@ function openDb() {
   });
 }
 
-async function saveHandle(handle) {
+async function saveHandles(handles) {
   if (!('indexedDB' in window)) return;
   const db = await openDb();
   const tx = db.transaction(HANDLE_STORE, 'readwrite');
-  tx.objectStore(HANDLE_STORE).put(handle, HANDLE_KEY);
+  tx.objectStore(HANDLE_STORE).put(handles, HANDLE_KEY);
 }
 
-async function getSavedHandle() {
+async function getSavedHandles() {
   if (!('indexedDB' in window)) return null;
   const db = await openDb();
   return new Promise(resolve => {
     const tx = db.transaction(HANDLE_STORE, 'readonly');
     const request = tx.objectStore(HANDLE_STORE).get(HANDLE_KEY);
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => resolve(null);
+    request.onsuccess = () => {
+      const stored = request.result;
+      resolve(stored ? (Array.isArray(stored) ? stored : [stored]) : []);
+    };
+    request.onerror = () => resolve([]);
   });
 }
 
-async function loadSavedHandle() {
+async function loadSavedHandles() {
   if (!('showOpenFilePicker' in window)) return false;
-  const handle = await getSavedHandle();
-  if (!handle) return false;
-  if (!await verifyFilePermission(handle, 'read')) return false;
-  const file = await handle.getFile();
-  readWorkbook(await file.arrayBuffer(), file.name, handle);
+  const handles = await getSavedHandles();
+  if (!handles.length) return false;
+  const entries = [];
+  for (const handle of handles) {
+    if (!await verifyFilePermission(handle, 'read')) return false;
+    const file = await handle.getFile();
+    entries.push({ arrayBuffer: await file.arrayBuffer(), name: file.name, handle });
+  }
+  readWorkbooks(entries);
   return true;
 }
 
@@ -867,8 +959,16 @@ function showMessage(id, field) {
     followUpEmail1Message: 'Follow Up 1',
     followUpEmail2Message: 'Follow Up 2'
   };
+  const subjectFields = {
+    firstEmailMessage: 'firstEmailSubject',
+    followUpEmail1Message: 'followUpEmail1Subject',
+    followUpEmail2Message: 'followUpEmail2Subject'
+  };
+  const subject = lead[subjectFields[field]] || '';
   dom.modalCompany.textContent = lead.companyName || 'Lead message';
   dom.modalTitle.textContent = labels[field];
+  dom.modalSubject.textContent = subject;
+  dom.modalSubjectRow.hidden = !subject;
   dom.modalMessage.textContent = lead[field] || '';
   dom.modal.showModal();
 }
@@ -884,9 +984,14 @@ dom.openFileButton.addEventListener('click', async () => {
 });
 
 dom.fileInput.addEventListener('change', async event => {
-  const file = event.target.files[0];
-  if (!file) return;
-  readWorkbook(await file.arrayBuffer(), file.name);
+  const files = [...event.target.files];
+  if (!files.length) return;
+  const entries = await Promise.all(files.map(async file => ({
+    arrayBuffer: await file.arrayBuffer(),
+    name: file.name,
+    handle: null
+  })));
+  readWorkbooks(entries);
   event.target.value = '';
 });
 
@@ -959,7 +1064,9 @@ function closeDrawer() {
 }
 
 dom.copyMessageButton.addEventListener('click', async () => {
-  await navigator.clipboard.writeText(dom.modalMessage.textContent);
+  const subject = dom.modalSubject.textContent;
+  const message = dom.modalMessage.textContent;
+  await navigator.clipboard.writeText(subject ? `Subject: ${subject}\n\n${message}` : message);
   dom.copyMessageButton.textContent = 'Copied';
   window.setTimeout(() => {
     dom.copyMessageButton.textContent = 'Copy';
@@ -969,7 +1076,7 @@ dom.copyMessageButton.addEventListener('click', async () => {
 (async function init() {
   dom.autoSaveToggle.checked = true;
   try {
-    if (await loadSavedHandle()) return;
+    if (await loadSavedHandles()) return;
   } catch (error) {
     console.warn('Saved file handle could not be restored.', error);
   }
