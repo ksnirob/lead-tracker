@@ -676,6 +676,12 @@ h3 {
   color: var(--green-dark);
 }
 
+.mini-status.status-Mail-Not-Found,
+.mini-status.status-Bounce-Back {
+  background: #fff2df;
+  color: #94551b;
+}
+
 .mini-status.status-Closed {
   background: #d8ecdf;
   color: #0f5431;
@@ -741,6 +747,12 @@ h3 {
   color: var(--green-dark);
 }
 
+.status-pill.status-Mail-Not-Found,
+.status-pill.status-Bounce-Back {
+  background: #fff2df;
+  color: #94551b;
+}
+
 .status-pill.status-Closed {
   background: #d8ecdf;
   color: #0f5431;
@@ -761,6 +773,10 @@ h3 {
   align-items: flex-start;
   gap: 14px;
   margin-bottom: 18px;
+}
+
+.detail-edit-button {
+  margin-left: auto;
 }
 
 .drawer-backdrop {
@@ -855,6 +871,22 @@ h3 {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.copy-contact-button {
+  margin-top: 9px;
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--green-dark);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.copy-contact-button:hover {
+  border-color: var(--green);
+  background: var(--green-soft);
 }
 
 .social-contact {
@@ -974,6 +1006,12 @@ h3 {
   color: var(--green-dark);
 }
 
+.status-select.status-Mail-Not-Found,
+.status-select.status-Bounce-Back {
+  background: #fff2df;
+  color: #94551b;
+}
+
 .status-select.status-Closed {
   background: #dcefe3;
   color: #0f5431;
@@ -988,6 +1026,83 @@ h3 {
   border-color: #e8b8bc;
   background: var(--red-soft);
   color: var(--red-dark);
+}
+
+.lead-edit-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.lead-edit-form label,
+.email-edit-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.lead-edit-form label > span,
+.email-edit-field legend {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.lead-edit-form input,
+.lead-edit-form textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  outline: 0;
+}
+
+.lead-edit-form textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.lead-edit-form input:focus,
+.lead-edit-form textarea:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 4px rgba(40, 120, 74, 0.13);
+}
+
+.edit-wide {
+  grid-column: 1 / -1;
+}
+
+.email-edit-field {
+  gap: 9px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.email-edit-field label {
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+}
+
+.email-edit-field label > span {
+  margin: 0;
+}
+
+.edit-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .status-select.status-Not-Set,
@@ -1201,7 +1316,12 @@ h3 {
   }
 
   .detail-contact-grid,
-  .stage-controls {
+  .stage-controls,
+  .lead-edit-form {
+    grid-template-columns: 1fr;
+  }
+
+  .email-edit-field label {
     grid-template-columns: 1fr;
   }
 

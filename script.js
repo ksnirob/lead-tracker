@@ -14,6 +14,8 @@ const STATUS_OPTIONS = [
   'Draft',
   'Sent',
   'Replied',
+  'Mail Not Found',
+  'Bounce Back',
   'Closed'
 ];
 
@@ -73,7 +75,7 @@ const HEADER_ALIASES = {
 };
 
 const PRICING_COPY = 'The redesign can be kept affordable, usually around $200 to $800 depending on what you need. You do not need to pay anything upfront. Payment is only after the website is delivered and you are happy with the result.';
-const STATUS_VALIDATION_FORMULA = '"Draft,Sent,Replied,Closed"';
+const STATUS_VALIDATION_FORMULA = '"Draft,Sent,Replied,Mail Not Found,Bounce Back,Closed"';
 const LEAD_STATUS_VALIDATION_FORMULA = '"Win,Lost"';
 
 const dom = {
@@ -116,6 +118,7 @@ let workbookSources = [];
 let dirty = false;
 let autosaveTimer = null;
 let selectedLeadId = null;
+let editingLeadId = null;
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -131,6 +134,8 @@ function normalizeStatus(value) {
   const lower = raw.toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ');
   if (lower === 'sent' || lower === 'contacted' || lower === 'sent first email' || lower === 'sent 1st email' || lower === 'follow up sent' || lower === 'followup sent' || lower === 'follow up email sent') return 'Sent';
   if (lower === 'replied' || lower === 'reply') return 'Replied';
+  if (lower === 'mail not found' || lower === 'email not found' || lower === 'not found') return 'Mail Not Found';
+  if (lower === 'bounce back' || lower === 'bounced' || lower === 'bounce') return 'Bounce Back';
   if (lower === 'closed' || lower === 'won') return 'Closed';
   if (lower === 'draft' || lower === 'not recorded' || lower === 'not contacted' || lower === 'not interested' || lower === 'lost') return 'Draft';
   return STATUS_OPTIONS.includes(raw) ? raw : 'Draft';
@@ -556,14 +561,15 @@ function renderLeadDetail(lead) {
         <h3>${escapeHtml(lead.companyName || 'Unnamed lead')}</h3>
         <span class="status-pill ${statusClass(lead.leadStatus || 'Not Set')}">${escapeHtml(lead.leadStatus || 'Not set')}</span>
       </div>
+      <button class="secondary-button detail-edit-button" type="button" data-edit-lead="${lead.id}">${editingLeadId === lead.id ? 'Editing lead' : 'Edit lead'}</button>
     </div>
 
-    <div class="detail-contact-grid">
-      ${contactItem('Website', website ? `<a href="${escapeHtml(website)}" target="_blank" rel="noreferrer">${escapeHtml(lead.website)}</a>` : 'Not recorded')}
-      ${contactItem('Email', email ? `<a href="${escapeHtml(email)}">${escapeHtml(lead.email)}</a>` : 'Not recorded')}
-      ${contactItem('Phone', escapeHtml(lead.contactNumber) || 'Not recorded')}
+    ${editingLeadId === lead.id ? editLeadFields(lead) : `<div class="detail-contact-grid">
+      ${contactItem('Website', website ? `<a href="${escapeHtml(website)}" target="_blank" rel="noreferrer">${escapeHtml(lead.website)}</a>` : 'Not recorded', '', lead.website)}
+      ${contactItem('Email', email ? `<a href="${escapeHtml(email)}">${escapeHtml(lead.email)}</a>` : 'Not recorded', '', lead.email)}
+      ${contactItem('Phone', escapeHtml(lead.contactNumber) || 'Not recorded', '', lead.contactNumber)}
       ${contactItem('Social', socialHtml, 'social-contact')}
-    </div>
+    </div>`}
 
     <label class="lead-status-control detail-status">
       <span>Lead Status</span>
@@ -607,13 +613,35 @@ function initials(name) {
     .toUpperCase() || 'LT';
 }
 
-function contactItem(label, value, className = '') {
+function contactItem(label, value, className = '', copyValue = '') {
   return `
     <div class="contact-item ${className}">
       <span>${label}</span>
       <strong>${value}</strong>
+      ${copyValue ? `<button class="copy-contact-button" type="button" data-copy="${escapeHtml(copyValue)}" aria-label="Copy ${label}">Copy</button>` : ''}
     </div>
   `;
+}
+
+function editLeadFields(lead) {
+  const fields = [
+    ['Company name', 'companyName', 'text'],
+    ['Website', 'website', 'text'],
+    ['Email', 'email', 'email'],
+    ['Phone', 'contactNumber', 'text']
+  ];
+  return `<div class="lead-edit-form">
+    ${fields.map(([label, field, type]) => `<label><span>${label}</span><input type="${type}" data-edit-field="${field}" value="${escapeHtml(lead[field])}"></label>`).join('')}
+    <label class="edit-wide"><span>Social links</span><textarea data-edit-field="socialMediaLinks" rows="3">${escapeHtml(lead.socialMediaLinks)}</textarea></label>
+    ${emailEditField(lead, '1st Email', 'firstEmailSubject', 'firstEmailMessage')}
+    ${emailEditField(lead, 'Follow Up 1', 'followUpEmail1Subject', 'followUpEmail1Message')}
+    ${emailEditField(lead, 'Follow Up 2', 'followUpEmail2Subject', 'followUpEmail2Message')}
+    <div class="edit-actions"><button class="primary-button" type="button" data-save-lead="${lead.id}">Save edits</button><button class="secondary-button" type="button" data-cancel-edit>Cancel</button></div>
+  </div>`;
+}
+
+function emailEditField(lead, label, subjectField, messageField) {
+  return `<fieldset class="edit-wide email-edit-field"><legend>${label}</legend><label><span>Subject</span><input type="text" data-edit-field="${subjectField}" value="${escapeHtml(lead[subjectField])}"></label><label><span>Message</span><textarea data-edit-field="${messageField}" rows="5">${escapeHtml(lead[messageField])}</textarea></label></fieldset>`;
 }
 
 function stageCard(lead, title, messageField, statusField, dateFieldName) {
@@ -670,6 +698,19 @@ function messageButton(lead, field, label) {
 
 function findLead(id) {
   return leads.find(lead => lead.id === id);
+}
+
+function saveLeadEdits(id) {
+  const lead = findLead(id);
+  if (!lead) return;
+  dom.leadDetail.querySelectorAll('[data-edit-field]').forEach(input => {
+    const field = input.dataset.editField;
+    const value = input.value;
+    lead[field] = field === 'socialMediaLinks' ? sanitizeSocialLinks(value) : normalizeText(value);
+  });
+  editingLeadId = null;
+  markDirty();
+  render();
 }
 
 function updateLead(id, field, value) {
@@ -1047,6 +1088,31 @@ dom.leadDetail.addEventListener('click', event => {
 
   const button = event.target.closest('button[data-message]');
   if (button) showMessage(button.dataset.id, button.dataset.message);
+
+  const editButton = event.target.closest('[data-edit-lead]');
+  if (editButton) {
+    editingLeadId = editButton.dataset.editLead;
+    renderLeadDetail(findLead(editingLeadId));
+    return;
+  }
+
+  if (event.target.closest('[data-save-lead]')) {
+    saveLeadEdits(event.target.closest('[data-save-lead]').dataset.saveLead);
+    return;
+  }
+
+  if (event.target.closest('[data-cancel-edit]')) {
+    editingLeadId = null;
+    renderLeadDetail(findLead(selectedLeadId));
+    return;
+  }
+
+  const copyButton = event.target.closest('[data-copy]');
+  if (copyButton) {
+    navigator.clipboard.writeText(copyButton.dataset.copy);
+    copyButton.textContent = 'Copied';
+    window.setTimeout(() => { copyButton.textContent = 'Copy'; }, 1000);
+  }
 });
 
 dom.drawerBackdrop.addEventListener('click', closeDrawer);
