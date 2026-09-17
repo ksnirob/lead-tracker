@@ -340,7 +340,9 @@ function currentStatus(lead) {
 }
 
 function hasCompletedStage(lead, statusField, dateField) {
-  return ['Sent', 'Replied', 'Closed'].includes(lead[statusField]) || Boolean(lead[dateField]);
+  const status = lead[statusField];
+  if (status === 'Bounce Back' || status === 'Mail Not Found') return false;
+  return ['Sent', 'Replied', 'Closed'].includes(status) || Boolean(lead[dateField]);
 }
 
 function matchesStatusFilter(lead, filter) {
