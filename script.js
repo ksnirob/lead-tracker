@@ -83,6 +83,7 @@ const dom = {
   leadDetail: document.getElementById('leadDetail'),
   drawerBackdrop: document.getElementById('drawerBackdrop'),
   searchInput: document.getElementById('searchInput'),
+  clearSearchButton: document.getElementById('clearSearchButton'),
   statusFilter: document.getElementById('statusFilter'),
   openFileButton: document.getElementById('openFileButton'),
   saveButton: document.getElementById('saveButton'),
@@ -332,7 +333,7 @@ function currentStatus(lead) {
 }
 
 function hasCompletedStage(lead, statusField, dateField) {
-  return lead[statusField] !== 'Draft' || Boolean(lead[dateField]);
+  return ['Sent', 'Replied', 'Closed'].includes(lead[statusField]) || Boolean(lead[dateField]);
 }
 
 function matchesStatusFilter(lead, filter) {
@@ -1062,7 +1063,16 @@ dom.fileInput.addEventListener('change', async event => {
 
 dom.saveButton.addEventListener('click', () => saveWorkbook());
 dom.downloadButton.addEventListener('click', () => downloadWorkbook());
-dom.searchInput.addEventListener('input', render);
+dom.searchInput.addEventListener('input', () => {
+  dom.clearSearchButton.hidden = !dom.searchInput.value;
+  render();
+});
+dom.clearSearchButton.addEventListener('click', () => {
+  dom.searchInput.value = '';
+  dom.clearSearchButton.hidden = true;
+  dom.searchInput.focus();
+  render();
+});
 dom.statusFilter.addEventListener('change', render);
 dom.autoSaveToggle.addEventListener('change', () => {
   if (dom.autoSaveToggle.checked && dirty) saveWorkbook({ quiet: true });

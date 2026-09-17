@@ -38,7 +38,10 @@
     <section class="toolbar" aria-label="Search and filters">
       <label class="search-field">
         <span>Search</span>
-        <input id="searchInput" type="search" placeholder="Company, website, email, or phone">
+        <span class="search-input-wrap">
+          <input id="searchInput" type="search" placeholder="Company, website, email, or phone">
+          <button class="clear-search" id="clearSearchButton" type="button" aria-label="Clear search" hidden>×</button>
+        </span>
       </label>
       <label class="filter-field">
         <span>Status</span>

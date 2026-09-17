@@ -285,6 +285,11 @@ h3 {
   flex: 1 1 560px;
 }
 
+.search-input-wrap {
+  position: relative;
+  display: block;
+}
+
 .filter-field {
   flex: 0 0 220px;
 }
@@ -307,6 +312,30 @@ h3 {
   height: 44px;
   padding: 0 13px;
   font-weight: 700;
+}
+
+.search-field input {
+  padding-right: 42px;
+}
+
+.clear-search {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
+.clear-search:hover {
+  background: var(--soft);
+  color: var(--ink);
 }
 
 .search-field input:focus,
@@ -411,8 +440,19 @@ h3 {
   background: linear-gradient(145deg, #fff 55%, var(--card-tint));
   box-shadow: var(--shadow-soft);
   cursor: pointer;
-  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+  animation: card-rise 0.45s both;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
+
+.stat-card:nth-child(2) { animation-delay: 35ms; }
+.stat-card:nth-child(3) { animation-delay: 70ms; }
+.stat-card:nth-child(4) { animation-delay: 105ms; }
+.stat-card:nth-child(5) { animation-delay: 140ms; }
+.stat-card:nth-child(6) { animation-delay: 175ms; }
+.stat-card:nth-child(7) { animation-delay: 210ms; }
+.stat-card:nth-child(8) { animation-delay: 245ms; }
+.stat-card:nth-child(9) { animation-delay: 280ms; }
+.stat-card:nth-child(10) { animation-delay: 315ms; }
 
 .stat-card:hover,
 .stat-card:focus-visible,
@@ -420,6 +460,15 @@ h3 {
   border-color: #a9ccae;
   box-shadow: var(--shadow);
   transform: translateY(-2px);
+}
+
+.stat-card:hover .stat-card-heading b,
+.stat-card:focus-visible .stat-card-heading b {
+  transform: rotate(-6deg) scale(1.08);
+}
+
+.stat-card-heading b {
+  transition: transform 0.2s ease;
 }
 
 .stat-card.active {
@@ -629,6 +678,14 @@ h3 {
   background: #fbfdfb;
 }
 
+.excel-table tbody tr {
+  transition: background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.excel-table tbody tr:hover td:first-child {
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
 .excel-table tbody tr.selected td {
   background: #f1f8dc;
   border-bottom-color: #d7e9a8;
@@ -810,6 +867,16 @@ h3 {
 .drawer-panel.open {
   transform: translateX(0);
 }
+
+.drawer-panel.open .detail-hero,
+.drawer-panel.open .detail-contact-grid,
+.drawer-panel.open .detail-status,
+.drawer-panel.open .stage-card {
+  animation: drawer-rise 0.28s both;
+}
+
+.drawer-panel.open .stage-card:nth-child(2) { animation-delay: 45ms; }
+.drawer-panel.open .stage-card:nth-child(3) { animation-delay: 90ms; }
 
 .drawer-close {
   position: sticky;
@@ -1343,5 +1410,38 @@ h3 {
   .stat-card {
     min-width: 154px;
     scroll-snap-align: start;
+  }
+}
+
+@keyframes card-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes drawer-rise {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }
