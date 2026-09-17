@@ -341,7 +341,9 @@ function matchesStatusFilter(lead, filter) {
   if (filter === 'firstEmail') return hasCompletedStage(lead, 'firstEmailStatus', 'firstEmailDate');
   if (filter === 'followUp1') return hasCompletedStage(lead, 'followUp1Status', 'followUp1Date');
   if (filter === 'followUp2') return hasCompletedStage(lead, 'followUp2Status', 'followUp2Date');
-  if (filter === 'Mail Not Found' || filter === 'Bounce Back') return [lead.firstEmailStatus, lead.followUp1Status, lead.followUp2Status].includes(filter);
+  if (['Replied', 'Mail Not Found', 'Bounce Back'].includes(filter)) {
+    return [lead.firstEmailStatus, lead.followUp1Status, lead.followUp2Status].includes(filter);
+  }
   return currentStatus(lead) === filter;
 }
 
@@ -487,7 +489,7 @@ function renderStats() {
   dom.firstCount.textContent = stages.firstEmail;
   dom.followUp1Count.textContent = stages.followUp1;
   dom.followUp2Count.textContent = stages.followUp2;
-  dom.repliedCount.textContent = totals.Replied;
+  dom.repliedCount.textContent = countEmailStatus('Replied');
   dom.mailNotFoundCount.textContent = countEmailStatus('Mail Not Found');
   dom.bounceBackCount.textContent = countEmailStatus('Bounce Back');
   dom.winCount.textContent = totals.Win;
