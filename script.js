@@ -259,27 +259,34 @@ function parseSocialLinks(value) {
     .filter(Boolean)
     .flatMap(parseSocialLine);
 }
-
 function sanitizeSocialLinks(value) {
   return parseSocialLinks(value)
-    .map(item => item.url ? `${item.label}: ${item.url}` : item.label)
+    .map(item => `${item.checked ? '[x] ' : ''}${item.url ? `${item.label}: ${item.url}` : item.text ? `${item.label}: ${item.text}` : item.label}`)
     .join('\n');
 }
 
 function parseSocialLine(item) {
-  if (/^email\s*:/i.test(item)) return [];
-  if (/[^\s@]+@[^\s@]+\.[^\s@]+/.test(item)) return [];
-  if (/not found/i.test(item) && !/https?:\/\//i.test(item)) return [];
+  const checked = /^\[x\]\s*/i.test(item);
+  const cleanItem = item.replace(/^\[x\]\s*/i, '');
+  if (/^email\s*:/i.test(cleanItem)) return [];
+  if (/[^\s@]+@[^\s@]+\.[^\s@]+/.test(cleanItem)) return [];
+  if (/not found/i.test(cleanItem) && !/https?:\/\//i.test(cleanItem)) return [];
 
-  const urls = [...item.matchAll(/https?:\/\/[^\s;]+/gi)].map(match => match[0].replace(/[).,]+$/, ''));
+  const urls = [...cleanItem.matchAll(/https?:\/\/[^\s;]+/gi)].map(match => match[0].replace(/[).,]+$/, ''));
   if (urls.length) {
     return urls.map((url, index) => ({
-      label: socialLabelForUrl(item, url, index, urls.length),
-      url
+      label: socialLabelForUrl(cleanItem, url, index, urls.length),
+      url,
+      checked
     }));
   }
 
-  return socialTextLabels(item).map(label => ({ label, url: '' }));
+  return socialTextLabels(cleanItem).map(label => ({
+    label,
+    url: '',
+    text: cleanItem.replace(new RegExp(`^${label}\\s*:\\s*`, 'i'), '').trim() || '',
+    checked
+  }));
 }
 
 function socialLabelForUrl(line, url, index, total) {
@@ -419,7 +426,7 @@ async function loadDefaultWorkbook() {
   if (window.location.protocol === 'file:') {
     setStatus('Open with localhost to auto-load Excel');
     dom.workbookChip.textContent = 'Browser security blocks automatic folder reads from file://. Use http://127.0.0.1:8000.';
-    dom.leadsBody.innerHTML = '<tr><td colspan="8" class="empty-state">Open this tracker from the local server URL to load the Excel folder automatically, or click Open Excel files.</td></tr>';
+    dom.leadsBody.innerHTML = '<tr><td colspan="9" class="empty-state">Open this tracker from the local server URL to load the Excel folder automatically, or click Open Excel files.</td></tr>';
     dom.leadDetail.innerHTML = '<div class="empty-state">Choose the Excel file once to edit lead details here.</div>';
     return;
   }
@@ -435,7 +442,7 @@ async function loadDefaultWorkbook() {
     console.error('Default workbook load failed:', error);
     setStatus('Excel folder file did not load');
     dom.workbookChip.textContent = 'Excel folder';
-    dom.leadsBody.innerHTML = '<tr><td colspan="8" class="empty-state">Could not load the Excel folder automatically. Start the local server from this folder, then open http://127.0.0.1:8000.</td></tr>';
+    dom.leadsBody.innerHTML = '<tr><td colspan="9" class="empty-state">Could not load the Excel folder automatically. Start the local server from this folder, then open http://127.0.0.1:8000.</td></tr>';
     dom.leadDetail.innerHTML = '<div class="empty-state">Workbook details will appear here after loading.</div>';
   }
 }
@@ -462,7 +469,7 @@ function render() {
   renderStats();
 
   if (!visible.length) {
-    dom.leadsBody.innerHTML = `<tr><td colspan="8" class="empty-state">${leads.length ? 'No leads match the current search or filter.' : 'Open your Excel workbook to load leads.'}</td></tr>`;
+    dom.leadsBody.innerHTML = `<tr><td colspan="9" class="empty-state">${leads.length ? 'No leads match the current search or filter.' : 'Open your Excel workbook to load leads.'}</td></tr>`;
     dom.leadDetail.innerHTML = '<div class="empty-state">No selected lead.</div>';
     return;
   }
@@ -527,14 +534,22 @@ function renderLeadRow(lead) {
         <strong class="sheet-name">${escapeHtml(lead.companyName || 'Unnamed lead')}</strong>
       </td>
       <td>${website ? `<a href="${escapeHtml(website)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(lead.website))}</a>` : '<span class="empty-value">Not recorded</span>'}</td>
-      <td>${email ? `<a href="${escapeHtml(email)}">${escapeHtml(lead.email)}</a>` : '<span class="empty-value">Not recorded</span>'}</td>
+        <td>${email ? `<a href="${escapeHtml(email)}">${escapeHtml(lead.email)}</a>` : '<span class="empty-value">Not recorded</span>'}</td>
       <td>${escapeHtml(lead.contactNumber) || '<span class="empty-value">Not recorded</span>'}</td>
       <td>${sheetStatus(lead.firstEmailStatus, lead.firstEmailDate)}</td>
       <td>${sheetStatus(lead.followUp1Status, lead.followUp1Date)}</td>
       <td>${sheetStatus(lead.followUp2Status, lead.followUp2Date)}</td>
+      <td>${socialListStatus(lead)}</td>
       <td><span class="status-pill ${statusClass(lead.leadStatus || 'Not Set')}">${escapeHtml(lead.leadStatus || 'Not set')}</span></td>
     </tr>
   `;
+}
+
+function socialListStatus(lead) {
+  const checkedCount = parseSocialLinks(lead.socialMediaLinks).filter(link => link.checked).length;
+  return checkedCount
+    ? `<span class="social-list-status is-checked" title="${checkedCount} social link${checkedCount === 1 ? '' : 's'} checked">✓</span>`
+    : '<span class="social-list-status" title="No social outreach checked">-</span>';
 }
 
 function shortUrl(value) {
@@ -600,16 +615,17 @@ function renderLeadDetail(lead) {
 
 function socialLinkItem(link, index) {
   const label = escapeHtml(link.label || `Link ${index + 1}`);
+  const checkbox = `<label class="social-check" title="Mark social outreach as contacted"><input type="checkbox" data-social-index="${index}" ${link.checked ? 'checked' : ''}><span class="social-check-icon" aria-hidden="true"></span></label>`;
   if (!link.url) {
-    return `<span class="social-note"><span>${label}</span><small>Mentioned</small></span>`;
+    return `<span class="social-note"><span class="social-link-copy"><span>${label}</span><small>${escapeHtml(link.text || 'Mentioned')}</small></span>${checkbox}</span>`;
   }
 
   const url = asUrl(link.url);
   return `
-    <a class="social-link-item" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">
-      <span>${label}</span>
-      <small>${escapeHtml(shortUrl(link.url))}</small>
-    </a>
+    <div class="social-link-item">
+      <a href="${escapeHtml(url)}" target="_blank" rel="noreferrer"><span class="social-link-copy"><span>${label}</span><small>${escapeHtml(shortUrl(link.url))}</small></span></a>
+      ${checkbox}
+    </div>
   `;
 }
 
@@ -723,6 +739,17 @@ function saveLeadEdits(id) {
     lead[field] = field === 'socialMediaLinks' ? sanitizeSocialLinks(value) : normalizeText(value);
   });
   editingLeadId = null;
+  markDirty(lead.sourceId);
+  render();
+}
+
+function updateSocialCheck(id, index, checked) {
+  const lead = findLead(id);
+  if (!lead) return;
+  const links = parseSocialLinks(lead.socialMediaLinks);
+  if (!links[index]) return;
+  links[index].checked = checked;
+  lead.socialMediaLinks = sanitizeSocialLinks(links.map(link => `${link.checked ? '[x] ' : ''}${link.url ? `${link.label}: ${link.url}` : link.text ? `${link.label}: ${link.text}` : link.label}`).join('\n'));
   markDirty(lead.sourceId);
   render();
 }
@@ -1111,6 +1138,10 @@ dom.leadsBody.addEventListener('click', event => {
 
 dom.leadDetail.addEventListener('change', event => {
   const target = event.target;
+  if (target.dataset.socialIndex !== undefined) {
+    updateSocialCheck(selectedLeadId, Number(target.dataset.socialIndex), target.checked);
+    return;
+  }
   if (!target.dataset.id || !target.dataset.field) return;
   updateLead(target.dataset.id, target.dataset.field, target.value);
 });
