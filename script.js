@@ -116,6 +116,7 @@ const dom = {
 let leads = [];
 let workbookSources = [];
 let dirty = false;
+const dirtySourceIds = new Set();
 let autosaveTimer = null;
 let selectedLeadId = null;
 let editingLeadId = null;
@@ -394,6 +395,7 @@ function readWorkbooks(entries) {
   workbookSources = parsed.map(item => item.source);
   leads = parsed.flatMap(item => item.leads);
   selectedLeadId = leads[0]?.id || null;
+  dirtySourceIds.clear();
   dirty = false;
   dom.saveButton.disabled = !leads.length;
   dom.downloadButton.disabled = !leads.length;
@@ -709,7 +711,7 @@ function saveLeadEdits(id) {
     lead[field] = field === 'socialMediaLinks' ? sanitizeSocialLinks(value) : normalizeText(value);
   });
   editingLeadId = null;
-  markDirty();
+  markDirty(lead.sourceId);
   render();
 }
 
@@ -725,7 +727,7 @@ function updateLead(id, field, value) {
   }
 
   if (oldValue !== lead[field]) {
-    markDirty();
+    markDirty(lead.sourceId);
     render();
   }
 }
@@ -744,8 +746,9 @@ function updateLeadStatus(lead, field) {
   }
 }
 
-function markDirty() {
+function markDirty(sourceId) {
   dirty = true;
+  if (sourceId) dirtySourceIds.add(sourceId);
   setStatus('Unsaved changes');
   if (dom.autoSaveToggle.checked) {
     window.clearTimeout(autosaveTimer);
@@ -866,34 +869,44 @@ async function saveWorkbook({ quiet = false } = {}) {
   let output = null;
 
   try {
-    const connectedSources = workbookSources.filter(source => source.handle);
-    if (connectedSources.length === workbookSources.length) {
-      for (const source of connectedSources) {
+    const dirtySources = workbookSources.filter(source => dirtySourceIds.has(source.id));
+    if (!dirtySources.length) {
+      setStatus('No unsaved changes');
+      return;
+    }
+
+    const connectedSources = dirtySources.filter(source => source.handle);
+    if (connectedSources.length === dirtySources.length && dirtySources.every(source => source.handle)) {
+      for (const source of dirtySources) {
         if (!await verifyFilePermission(source.handle, 'readwrite')) throw new Error(`Write permission denied for ${source.name}.`);
         await writeWorkbookToHandle(source.handle, await buildWorkbookArray(source.id));
       }
+      dirtySources.forEach(source => dirtySourceIds.delete(source.id));
       dirty = false;
-      setStatus(quiet ? `Auto-saved ${connectedSources.length} workbooks` : `Saved ${connectedSources.length} workbooks`);
+      setStatus(quiet ? `Auto-saved ${dirtySources.length} workbook${dirtySources.length === 1 ? '' : 's'}` : `Saved ${dirtySources.length} workbook${dirtySources.length === 1 ? '' : 's'}`);
       return;
     }
 
     if (!quiet) {
-      if (workbookSources.length === 1 && 'showSaveFilePicker' in window) {
-        output = await buildWorkbookArray(workbookSources[0].id);
+      if (dirtySources.length === 1 && 'showSaveFilePicker' in window) {
+        output = await buildWorkbookArray(dirtySources[0].id);
         const pickedHandle = await chooseSaveHandle();
         await writeWorkbookToHandle(pickedHandle, output);
-        workbookSources[0].handle = pickedHandle;
-        workbookSources[0].name = pickedHandle.name || workbookSources[0].name;
+        dirtySources[0].handle = pickedHandle;
+        dirtySources[0].name = pickedHandle.name || dirtySources[0].name;
+        dirtySourceIds.delete(dirtySources[0].id);
         dirty = false;
-        dom.workbookChip.textContent = 'Connected to 1 workbook';
+        dom.workbookChip.textContent = `Connected to ${workbookSources.length} workbooks`;
         setStatus('Saved to Excel');
         return;
       }
 
-      output = await buildWorkbookArray();
-      await downloadWorkbook(output);
+      const sourceId = dirtySources.length === 1 ? dirtySources[0].id : null;
+      output = await buildWorkbookArray(sourceId);
+      await downloadWorkbook(output, sourceId);
+      dirtySources.forEach(source => dirtySourceIds.delete(source.id));
       dirty = false;
-      setStatus('Downloaded combined updated copy');
+      setStatus(sourceId ? 'Downloaded updated workbook copy' : 'Downloaded combined updated copy');
     } else {
       setStatus('Auto-save needs Open Excel permission');
     }
@@ -913,10 +926,11 @@ async function saveWorkbook({ quiet = false } = {}) {
   }
 }
 
-async function downloadWorkbook(output) {
+async function downloadWorkbook(output, sourceId = null) {
   const workbookOutput = output || await buildWorkbookArray();
   const link = document.createElement('a');
-  const baseName = workbookSources.length === 1 ? workbookSources[0].name : 'all-leads';
+  const source = sourceId ? workbookSources.find(item => item.id === sourceId) : null;
+  const baseName = source ? source.name : workbookSources.length === 1 ? workbookSources[0].name : 'all-leads';
   const safeName = baseName.replace(/\.(xlsx|xls)$/i, '') || 'leads-tracker';
   link.href = URL.createObjectURL(new Blob([workbookOutput], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   link.download = `${safeName}-updated.xlsx`;
