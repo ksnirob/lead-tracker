@@ -516,6 +516,12 @@ h3 {
   --card-tint: #e8f1f6;
 }
 
+.status-mail-not-found,
+.status-bounce-back {
+  --card-accent: #a15f1d;
+  --card-tint: #fff2df;
+}
+
 .status-win {
   --card-accent: #16824b;
   --card-tint: #e1f4e8;

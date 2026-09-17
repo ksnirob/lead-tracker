@@ -49,6 +49,8 @@
           <option value="followUp1">Follow Up 1</option>
           <option value="followUp2">Follow Up 2</option>
           <option value="Replied">Replied</option>
+          <option value="Mail Not Found">Mail Not Found</option>
+          <option value="Bounce Back">Bounce Back</option>
           <option value="Win">Win</option>
           <option value="Lost">Lost</option>
         </select>
@@ -106,6 +108,16 @@
         <div class="stat-card-heading"><span>Lost</span><b>×</b></div>
         <strong id="lostCount">0</strong>
         <small>Did not convert</small>
+      </article>
+      <article class="stat-card status-mail-not-found" data-filter="Mail Not Found" tabindex="0">
+        <div class="stat-card-heading"><span>Mail Not Found</span><b>!</b></div>
+        <strong id="mailNotFoundCount">0</strong>
+        <small>Email could not be found</small>
+      </article>
+      <article class="stat-card status-bounce-back" data-filter="Bounce Back" tabindex="0">
+        <div class="stat-card-heading"><span>Bounce Back</span><b>↩</b></div>
+        <strong id="bounceBackCount">0</strong>
+        <small>Email was rejected</small>
       </article>
     </section>
 

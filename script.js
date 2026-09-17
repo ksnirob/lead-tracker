@@ -101,6 +101,8 @@ const dom = {
   followUp1Count: document.getElementById('followUp1Count'),
   followUp2Count: document.getElementById('followUp2Count'),
   repliedCount: document.getElementById('repliedCount'),
+  mailNotFoundCount: document.getElementById('mailNotFoundCount'),
+  bounceBackCount: document.getElementById('bounceBackCount'),
   winCount: document.getElementById('winCount'),
   lostCount: document.getElementById('lostCount'),
   modal: document.getElementById('messageModal'),
@@ -338,7 +340,12 @@ function matchesStatusFilter(lead, filter) {
   if (filter === 'firstEmail') return hasCompletedStage(lead, 'firstEmailStatus', 'firstEmailDate');
   if (filter === 'followUp1') return hasCompletedStage(lead, 'followUp1Status', 'followUp1Date');
   if (filter === 'followUp2') return hasCompletedStage(lead, 'followUp2Status', 'followUp2Date');
+  if (filter === 'Mail Not Found' || filter === 'Bounce Back') return [lead.firstEmailStatus, lead.followUp1Status, lead.followUp2Status].includes(filter);
   return currentStatus(lead) === filter;
+}
+
+function countEmailStatus(status) {
+  return leads.filter(lead => [lead.firstEmailStatus, lead.followUp1Status, lead.followUp2Status].includes(status)).length;
 }
 
 function mapRows(rows, sourceId) {
@@ -480,6 +487,8 @@ function renderStats() {
   dom.followUp1Count.textContent = stages.followUp1;
   dom.followUp2Count.textContent = stages.followUp2;
   dom.repliedCount.textContent = totals.Replied;
+  dom.mailNotFoundCount.textContent = countEmailStatus('Mail Not Found');
+  dom.bounceBackCount.textContent = countEmailStatus('Bounce Back');
   dom.winCount.textContent = totals.Win;
   dom.lostCount.textContent = totals.Lost;
   renderPipeline(totals);
