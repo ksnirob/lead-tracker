@@ -592,7 +592,10 @@ function renderLeadDetail(lead) {
         <h3>${escapeHtml(lead.companyName || 'Unnamed lead')}</h3>
         <span class="status-pill ${statusClass(lead.leadStatus || 'Not Set')}">${escapeHtml(lead.leadStatus || 'Not set')}</span>
       </div>
-      <button class="secondary-button detail-edit-button" type="button" data-edit-lead="${lead.id}">${editingLeadId === lead.id ? 'Editing lead' : 'Edit lead'}</button>
+      <div class="detail-actions">
+        <button class="secondary-button detail-edit-button" type="button" data-edit-lead="${lead.id}">${editingLeadId === lead.id ? 'Editing lead' : 'Edit lead'}</button>
+        <button class="danger-button" type="button" data-remove-lead="${lead.id}">Remove lead</button>
+      </div>
     </div>
 
     ${editingLeadId === lead.id ? editLeadFields(lead) : `<div class="detail-contact-grid">
@@ -771,6 +774,20 @@ function updateLead(id, field, value) {
     markDirty(lead.sourceId);
     render();
   }
+}
+
+function removeLead(id) {
+  const lead = findLead(id);
+  if (!lead) return;
+  const name = lead.companyName || 'this lead';
+  if (!window.confirm(`Remove ${name} from the tracker? This will also remove it from the saved Excel workbook.`)) return;
+
+  leads = leads.filter(item => item.id !== id);
+  editingLeadId = editingLeadId === id ? null : editingLeadId;
+  selectedLeadId = leads[0]?.id || null;
+  markDirty(lead.sourceId);
+  render();
+  if (!selectedLeadId) closeDrawer();
 }
 
 function applyAutomaticDate(lead, field, status) {
@@ -1161,6 +1178,12 @@ dom.leadDetail.addEventListener('click', event => {
   if (editButton) {
     editingLeadId = editButton.dataset.editLead;
     renderLeadDetail(findLead(editingLeadId));
+    return;
+  }
+
+  const removeButton = event.target.closest('[data-remove-lead]');
+  if (removeButton) {
+    removeLead(removeButton.dataset.removeLead);
     return;
   }
 

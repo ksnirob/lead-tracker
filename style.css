@@ -860,8 +860,28 @@ h3 {
   margin-bottom: 18px;
 }
 
-.detail-edit-button {
+.detail-actions {
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.danger-button {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid #e2b7b7;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: #9f2424;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.danger-button:hover {
+  border-color: #cf6b6b;
+  background: #fdeaea;
 }
 
 .drawer-backdrop {
