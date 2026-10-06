@@ -50,7 +50,8 @@ const REQUIRED_HEADERS = [
   'Follow Up 2',
   'Status',
   'Dates',
-  'Lead Status'
+  'Lead Status',
+  'Notes'
 ];
 
 const HEADER_ALIASES = {
@@ -71,7 +72,8 @@ const HEADER_ALIASES = {
   firstEmailDate: ['1st Email Date', 'First Email Date'],
   followUp1Date: ['Follow Up 1 Date', 'Follow-up 1 Date', 'Followup 1 Date'],
   followUp2Date: ['Follow Up 2 Date', 'Follow-up 2 Date', 'Followup 2 Date'],
-  leadStatus: ['Lead Status', 'Overall Status']
+  leadStatus: ['Lead Status', 'Overall Status'],
+  notes: ['Notes', 'Note', 'Lead Notes']
 };
 
 const PRICING_COPY = 'The redesign can be kept affordable, usually around $200 to $800 depending on what you need. You do not need to pay anything upfront. Payment is only after the website is delivered and you are happy with the result.';
@@ -391,7 +393,8 @@ function mapRows(rows, sourceId) {
       firstEmailDate: normalizeDate(getByIndex(row, indexes, 'firstEmailDate')),
       followUp1Date: normalizeDate(getByIndex(row, indexes, 'followUp1Date')),
       followUp2Date: normalizeDate(getByIndex(row, indexes, 'followUp2Date')),
-      leadStatus: normalizeLeadStatus(getByIndex(row, indexes, 'leadStatus'))
+      leadStatus: normalizeLeadStatus(getByIndex(row, indexes, 'leadStatus')),
+      notes: normalizeText(getByIndex(row, indexes, 'notes'))
       };
     })
     .filter(lead => lead.companyName || lead.website || lead.email);
@@ -615,6 +618,14 @@ function renderLeadDetail(lead) {
       ${stageCard(lead, 'Follow Up 1', 'followUpEmail1Message', 'followUp1Status', 'followUp1Date')}
       ${stageCard(lead, 'Follow Up 2', 'followUpEmail2Message', 'followUp2Status', 'followUp2Date')}
     </div>
+
+    <section class="notes-card">
+      <div class="notes-heading">
+        <span>Notes</span>
+        <button class="primary-button notes-save-button" type="button" data-save-notes="${lead.id}">Add notes</button>
+      </div>
+      <textarea data-notes-input="${lead.id}" rows="4" placeholder="Add notes for this lead...">${escapeHtml(lead.notes)}</textarea>
+    </section>
 `;
 }
 
@@ -668,6 +679,7 @@ function editLeadFields(lead) {
   return `<div class="lead-edit-form">
     ${fields.map(([label, field, type]) => `<label><span>${label}</span><input type="${type}" data-edit-field="${field}" value="${escapeHtml(lead[field])}"></label>`).join('')}
     <label class="edit-wide"><span>Social links</span><textarea data-edit-field="socialMediaLinks" rows="3">${escapeHtml(lead.socialMediaLinks)}</textarea></label>
+    <label class="edit-wide"><span>Notes</span><textarea data-edit-field="notes" rows="4">${escapeHtml(lead.notes)}</textarea></label>
     ${emailEditField(lead, '1st Email', 'firstEmailSubject', 'firstEmailMessage')}
     ${emailEditField(lead, 'Follow Up 1', 'followUpEmail1Subject', 'followUpEmail1Message')}
     ${emailEditField(lead, 'Follow Up 2', 'followUpEmail2Subject', 'followUpEmail2Message')}
@@ -746,6 +758,19 @@ function saveLeadEdits(id) {
   editingLeadId = null;
   markDirty(lead.sourceId);
   render();
+}
+
+function saveLeadNotes(id) {
+  const lead = findLead(id);
+  const input = dom.leadDetail.querySelector(`[data-notes-input="${id}"]`);
+  if (!lead || !input) return;
+
+  const nextNotes = normalizeText(input.value);
+  if (lead.notes !== nextNotes) {
+    lead.notes = nextNotes;
+    markDirty(lead.sourceId);
+  }
+  setStatus('Notes added');
 }
 
 function updateSocialCheck(id, index, checked) {
@@ -835,7 +860,8 @@ function toWorkbookRows(sourceId = null) {
     addPricingCopyIfUseful(lead.followUpEmail2Message),
     lead.followUp2Status,
     lead.followUp2Date,
-    lead.leadStatus
+    lead.leadStatus,
+    lead.notes
   ]);
 }
 
@@ -849,7 +875,7 @@ function addPricingCopyIfUseful(message) {
 async function buildWorkbookArray(sourceId = null) {
   const worksheet = XLSX.utils.aoa_to_sheet([REQUIRED_HEADERS, ...toWorkbookRows(sourceId)]);
   worksheet['!cols'] = [
-    18, 30, 30, 18, 24, 36, 52, 18, 15, 36, 52, 18, 15, 36, 52, 18, 15, 20
+    18, 30, 30, 18, 24, 36, 52, 18, 15, 36, 52, 18, 15, 36, 52, 18, 15, 20, 42
   ].map(width => ({ wch: width }));
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Leads');
@@ -1189,6 +1215,12 @@ dom.leadDetail.addEventListener('click', event => {
 
   if (event.target.closest('[data-save-lead]')) {
     saveLeadEdits(event.target.closest('[data-save-lead]').dataset.saveLead);
+    return;
+  }
+
+  const notesButton = event.target.closest('[data-save-notes]');
+  if (notesButton) {
+    saveLeadNotes(notesButton.dataset.saveNotes);
     return;
   }
 
