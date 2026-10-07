@@ -1,14 +1,9 @@
-const DEFAULT_WORKBOOK_PATHS = [
-  'excel/Batch_01_Leads_Tracker.xlsx',
-  'excel/Batch_02_Leads_Tracker.xlsx',
-  'excel/Batch_03_Leads_Tracker.xlsx',
-  'excel/Batch_04_Leads_Tracker.xlsx',
-  'excel/Batch_05_Leads_Tracker.xlsx'
-];
+const EXCEL_FOLDER_PATH = 'excel/';
 const FALLBACK_WORKBOOK_NAME = 'leads-tracker.xlsx';
 const HANDLE_DB = 'lead-tracker-file-handles';
 const HANDLE_STORE = 'handles';
 const HANDLE_KEY = 'primary-workbook';
+const FOLDER_HANDLE_KEY = 'excel-folder';
 
 const STATUS_OPTIONS = [
   'Draft',
@@ -87,7 +82,10 @@ const dom = {
   searchInput: document.getElementById('searchInput'),
   clearSearchButton: document.getElementById('clearSearchButton'),
   statusFilter: document.getElementById('statusFilter'),
+  countryFilter: document.getElementById('countryFilter'),
+  workbookFilter: document.getElementById('workbookFilter'),
   openFileButton: document.getElementById('openFileButton'),
+  openFolderButton: document.getElementById('openFolderButton'),
   saveButton: document.getElementById('saveButton'),
   downloadButton: document.getElementById('downloadButton'),
   fileInput: document.getElementById('fileInput'),
@@ -120,6 +118,7 @@ const dom = {
 
 let leads = [];
 let workbookSources = [];
+let discoveredCountries = [];
 let dirty = false;
 const dirtySourceIds = new Set();
 let autosaveTimer = null;
@@ -358,8 +357,8 @@ function matchesStatusFilter(lead, filter) {
   return currentStatus(lead) === filter;
 }
 
-function countEmailStatus(status) {
-  return leads.filter(lead => [lead.firstEmailStatus, lead.followUp1Status, lead.followUp2Status].includes(status)).length;
+function countEmailStatus(status, scopedLeads) {
+  return scopedLeads.filter(lead => [lead.firstEmailStatus, lead.followUp1Status, lead.followUp2Status].includes(status)).length;
 }
 
 function mapRows(rows, sourceId) {
@@ -400,20 +399,20 @@ function mapRows(rows, sourceId) {
     .filter(lead => lead.companyName || lead.website || lead.email);
 }
 
-function parseWorkbook(arrayBuffer, name, handle = null) {
+function parseWorkbook(arrayBuffer, name, handle = null, country = '', path = '') {
   const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: false });
   const sheetName = workbook.Sheets.Leads ? 'Leads' : workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
   const sourceId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${name}`;
   return {
-    source: { id: sourceId, name: name || FALLBACK_WORKBOOK_NAME, handle },
+    source: { id: sourceId, name: name || FALLBACK_WORKBOOK_NAME, handle, country, path },
     leads: mapRows(rows, sourceId)
   };
 }
 
 function readWorkbooks(entries) {
-  const parsed = entries.map(entry => parseWorkbook(entry.arrayBuffer, entry.name, entry.handle));
+  const parsed = entries.map(entry => parseWorkbook(entry.arrayBuffer, entry.name, entry.handle, entry.country, entry.path));
   workbookSources = parsed.map(item => item.source);
   leads = parsed.flatMap(item => item.leads);
   selectedLeadId = leads[0]?.id || null;
@@ -424,31 +423,138 @@ function readWorkbooks(entries) {
   const connected = workbookSources.every(source => source.handle);
   setStatus(`${leads.length} leads from ${workbookSources.length} workbook${workbookSources.length === 1 ? '' : 's'}`);
   dom.workbookChip.textContent = `${connected ? 'Connected to' : 'Loaded'} ${workbookSources.length} workbook${workbookSources.length === 1 ? '' : 's'}`;
+  populateFolderFilters();
   render();
+}
+
+function populateFolderFilters() {
+  const previousCountry = dom.countryFilter.value;
+  const countries = [...new Set([...discoveredCountries, ...workbookSources.map(source => source.country).filter(Boolean)])].sort();
+  dom.countryFilter.innerHTML = '<option value="all">All Country</option>' + countries.map(country => `<option value="${escapeHtml(country)}">${escapeHtml(country)}</option>`).join('');
+  dom.countryFilter.value = countries.includes(previousCountry) ? previousCountry : 'all';
+  populateWorkbookFilter();
+}
+
+function populateWorkbookFilter() {
+  const previous = dom.workbookFilter.value;
+  const sources = workbookSources.filter(source => dom.countryFilter.value === 'all' || source.country === dom.countryFilter.value);
+  dom.workbookFilter.innerHTML = '<option value="all">All workbooks</option>' + sources.map(source => `<option value="${escapeHtml(source.id)}">${escapeHtml(source.country ? `${source.country} / ${source.name}` : source.name)}</option>`).join('');
+  dom.workbookFilter.value = sources.some(source => source.id === previous) ? previous : 'all';
+}
+
+async function discoverExcelFolder() {
+  const rootUrl = new URL(EXCEL_FOLDER_PATH, window.location.href);
+  const files = [];
+  const countries = new Set();
+  const visited = new Set();
+  async function visit(url, country = '') {
+    if (visited.has(url.href)) return;
+    visited.add(url.href);
+    const response = await fetch(url, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`Cannot read ${url.pathname}: ${response.status}`);
+    const listing = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const children = [...listing.querySelectorAll('a[href]')].map(link => new URL(link.getAttribute('href'), url)).filter(child => child.origin === rootUrl.origin && child.pathname.startsWith(url.pathname) && child.pathname !== url.pathname && !child.search && !child.hash);
+    for (const child of children) {
+      const relative = decodeURIComponent(child.pathname.slice(url.pathname.length));
+      if (relative.replace(/\/$/, '').includes('/')) continue;
+      if (child.pathname.endsWith('/')) {
+        const folderCountry = country || relative.replace(/\/$/, '');
+        countries.add(folderCountry);
+        await visit(child, folderCountry);
+      } else if (/\.(xlsx|xls)$/i.test(relative) && !relative.startsWith('~$')) {
+        files.push({ url: child.href, path: decodeURIComponent(child.pathname.slice(rootUrl.pathname.length)), name: relative, country });
+      }
+    }
+  }
+  await visit(rootUrl);
+  discoveredCountries = [...countries];
+  return files.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+}
+
+async function readExcelDirectory(directory) {
+  const entries = [];
+  const countries = new Set();
+  async function visit(folder, country = '', prefix = '') {
+    for await (const [name, handle] of folder.entries()) {
+      if (handle.kind === 'directory') {
+        const folderCountry = country || name;
+        countries.add(folderCountry);
+        await visit(handle, folderCountry, `${prefix}${name}/`);
+      } else if (/\.(xlsx|xls)$/i.test(name) && !name.startsWith('~$')) {
+        const file = await handle.getFile();
+        entries.push({ name, country, path: `${prefix}${name}`, handle, arrayBuffer: await file.arrayBuffer() });
+      }
+    }
+  }
+  await visit(directory);
+  discoveredCountries = [...countries];
+  entries.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+  readWorkbooks(entries);
+}
+
+async function restoreExcelDirectory() {
+  if (!('showDirectoryPicker' in window)) return false;
+  const db = await openDb();
+  const directory = await new Promise((resolve, reject) => {
+    const request = db.transaction(HANDLE_STORE, 'readonly').objectStore(HANDLE_STORE).get(FOLDER_HANDLE_KEY);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  if (!directory || await directory.queryPermission({ mode: 'read' }) !== 'granted') return false;
+  await readExcelDirectory(directory);
+  return true;
+}
+
+async function openExcelDirectory() {
+  if (!('showDirectoryPicker' in window)) {
+    setStatus('Open in Microsoft Edge or Chrome to connect the Excel folder');
+    return;
+  }
+  const directory = await window.showDirectoryPicker({ id: 'lead-tracker-excel', mode: 'readwrite' });
+  await readExcelDirectory(directory);
+  const db = await openDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(HANDLE_STORE, 'readwrite');
+    tx.objectStore(HANDLE_STORE).put(directory, FOLDER_HANDLE_KEY);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 async function loadDefaultWorkbook() {
   if (window.location.protocol === 'file:') {
-    setStatus('Open with localhost to auto-load Excel');
-    dom.workbookChip.textContent = 'Browser security blocks automatic folder reads from file://. Use http://127.0.0.1:8000.';
-    dom.leadsBody.innerHTML = '<tr><td colspan="9" class="empty-state">Open this tracker from the local server URL to load the Excel folder automatically, or click Open Excel files.</td></tr>';
+    setStatus('Click Open Excel folder to connect countries and workbooks');
+    dom.workbookChip.textContent = 'Excel folder is not connected';
+    dom.leadsBody.innerHTML = '<tr><td colspan="9" class="empty-state">Click Open Excel folder and select the excel folder to load every country and workbook.</td></tr>';
     dom.leadDetail.innerHTML = '<div class="empty-state">Choose the Excel file once to edit lead details here.</div>';
-    return;
+    return false;
   }
 
   try {
-    const entries = await Promise.all(DEFAULT_WORKBOOK_PATHS.map(async path => {
-      const response = await fetch(`${path}?v=${Date.now()}`, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`${path} returned ${response.status}.`);
-      return { arrayBuffer: await response.arrayBuffer(), name: path.split('/').pop(), handle: null };
+    const files = await discoverExcelFolder();
+    const savedHandles = await getSavedHandles().catch(() => []) || [];
+    const results = await Promise.allSettled(files.map(async file => {
+      const matchingHandles = savedHandles.filter(handle => handle.name === file.name);
+      const uniqueName = files.filter(item => item.name === file.name).length === 1;
+      const handle = uniqueName && matchingHandles.length === 1 && await matchingHandles[0].queryPermission({ mode: 'read' }) === 'granted' ? matchingHandles[0] : null;
+      const response = await fetch(file.url, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`${file.path} returned ${response.status}.`);
+      const arrayBuffer = handle ? await (await handle.getFile()).arrayBuffer() : await response.arrayBuffer();
+      return { ...file, arrayBuffer, handle };
     }));
+    const entries = results.filter(result => result.status === 'fulfilled').map(result => result.value);
+    const failures = results.filter(result => result.status === 'rejected');
+    failures.forEach(result => console.warn('Workbook could not be loaded:', result.reason));
     readWorkbooks(entries);
+    if (failures.length) setStatus(`Loaded ${entries.length} workbooks; ${failures.length} could not be read`);
+    return true;
   } catch (error) {
     console.error('Default workbook load failed:', error);
     setStatus('Excel folder file did not load');
     dom.workbookChip.textContent = 'Excel folder';
     dom.leadsBody.innerHTML = '<tr><td colspan="9" class="empty-state">Could not load the Excel folder automatically. Start the local server from this folder, then open http://127.0.0.1:8000.</td></tr>';
     dom.leadDetail.innerHTML = '<div class="empty-state">Workbook details will appear here after loading.</div>';
+    return false;
   }
 }
 
@@ -459,7 +565,7 @@ function setStatus(message) {
 function filteredLeads() {
   const query = dom.searchInput.value.trim().toLowerCase();
   const filter = dom.statusFilter.value;
-  return leads.filter(lead => {
+  return folderFilteredLeads().filter(lead => {
     const haystack = `${lead.companyName} ${lead.website} ${lead.email} ${lead.contactNumber}`.toLowerCase();
     const matchesSearch = !query || haystack.includes(query);
     const matchesFilter = matchesStatusFilter(lead, filter);
@@ -467,10 +573,18 @@ function filteredLeads() {
   });
 }
 
+function folderFilteredLeads() {
+  const sources = new Set(workbookSources.filter(source =>
+    (dom.countryFilter.value === 'all' || source.country === dom.countryFilter.value) &&
+    (dom.workbookFilter.value === 'all' || source.id === dom.workbookFilter.value)
+  ).map(source => source.id));
+  return leads.filter(lead => sources.has(lead.sourceId));
+}
+
 function render() {
   const visible = filteredLeads();
   dom.resultCount.textContent = visible.length;
-  dom.tableFooter.textContent = `Showing ${visible.length} of ${leads.length} leads`;
+  dom.tableFooter.textContent = `Showing ${visible.length} of ${folderFilteredLeads().length} leads`;
   renderStats();
 
   if (!visible.length) {
@@ -488,42 +602,44 @@ function render() {
 }
 
 function renderStats() {
+  const scopedLeads = folderFilteredLeads();
   const totals = PIPELINE_STATUSES.reduce((memo, status) => ({ ...memo, [status]: 0 }), {});
   const stages = { firstEmail: 0, followUp1: 0, followUp2: 0 };
-  leads.forEach(lead => {
+  scopedLeads.forEach(lead => {
     totals[currentStatus(lead)] += 1;
     if (hasCompletedStage(lead, 'firstEmailStatus', 'firstEmailDate')) stages.firstEmail += 1;
     if (hasCompletedStage(lead, 'followUp1Status', 'followUp1Date')) stages.followUp1 += 1;
     if (hasCompletedStage(lead, 'followUp2Status', 'followUp2Date')) stages.followUp2 += 1;
   });
-  dom.totalCount.textContent = leads.length;
+  dom.totalCount.textContent = scopedLeads.length;
   dom.draftCount.textContent = totals.Draft;
   dom.firstCount.textContent = stages.firstEmail;
   dom.followUp1Count.textContent = stages.followUp1;
   dom.followUp2Count.textContent = stages.followUp2;
-  dom.repliedCount.textContent = countEmailStatus('Replied');
-  dom.mailNotFoundCount.textContent = countEmailStatus('Mail Not Found');
-  dom.bounceBackCount.textContent = countEmailStatus('Bounce Back');
+  dom.repliedCount.textContent = countEmailStatus('Replied', scopedLeads);
+  dom.mailNotFoundCount.textContent = countEmailStatus('Mail Not Found', scopedLeads);
+  dom.bounceBackCount.textContent = countEmailStatus('Bounce Back', scopedLeads);
   dom.winCount.textContent = totals.Win;
   dom.lostCount.textContent = totals.Lost;
-  renderPipeline(totals);
+  renderPipeline(totals, scopedLeads.length);
   document.querySelectorAll('.stat-card[data-filter]').forEach(card => {
     card.classList.toggle('active', card.dataset.filter === dom.statusFilter.value);
   });
 }
 
-function renderPipeline(totals) {
-  if (!leads.length) {
-    dom.pipelineSummary.textContent = 'Load leads to see your outreach flow';
+function renderPipeline(totals, totalCount) {
+  if (!totalCount) {
+    dom.pipelineSummary.textContent = 'No leads in this selection';
     dom.pipelineTrack.innerHTML = '<span></span>';
+    dom.pipelineTrack.removeAttribute('title');
     return;
   }
 
-  const active = leads.length - totals.Draft;
-  const activePercent = Math.round((active / leads.length) * 100);
+  const active = totalCount - totals.Draft;
+  const activePercent = Math.round((active / totalCount) * 100);
   dom.pipelineSummary.textContent = `${active} active · ${totals.Replied} replied · ${totals.Win} won · ${totals.Lost} lost`;
   dom.pipelineTrack.innerHTML = PIPELINE_STATUSES.map(status => {
-    const width = (totals[status] / leads.length) * 100;
+    const width = (totals[status] / totalCount) * 100;
     return `<span class="${statusClass(status)}" style="width:${width}%"></span>`;
   }).join('');
   dom.pipelineTrack.setAttribute('title', `${activePercent}% of leads have moved beyond Draft`);
@@ -1113,6 +1229,14 @@ function showMessage(id, field) {
   dom.modal.showModal();
 }
 
+dom.openFolderButton.addEventListener('click', async () => {
+  try {
+    await openExcelDirectory();
+  } catch (error) {
+    if (error.name !== 'AbortError') setStatus(`Could not connect Excel folder: ${error.message}`);
+  }
+});
+
 dom.openFileButton.addEventListener('click', async () => {
   try {
     await openFile();
@@ -1148,6 +1272,11 @@ dom.clearSearchButton.addEventListener('click', () => {
   render();
 });
 dom.statusFilter.addEventListener('change', render);
+dom.countryFilter.addEventListener('change', () => {
+  populateWorkbookFilter();
+  render();
+});
+dom.workbookFilter.addEventListener('change', render);
 dom.autoSaveToggle.addEventListener('change', () => {
   if (dom.autoSaveToggle.checked && dirty) saveWorkbook({ quiet: true });
 });
@@ -1272,9 +1401,14 @@ dom.copySubjectButton.addEventListener('click', async () => {
 (async function init() {
   dom.autoSaveToggle.checked = true;
   try {
+    if (await restoreExcelDirectory()) return;
+  } catch (error) {
+    console.warn('Excel folder permission could not be restored.', error);
+  }
+  if (await loadDefaultWorkbook()) return;
+  try {
     if (await loadSavedHandles()) return;
   } catch (error) {
     console.warn('Saved file handle could not be restored.', error);
   }
-  await loadDefaultWorkbook();
 })();

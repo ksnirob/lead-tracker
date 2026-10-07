@@ -263,6 +263,7 @@ h3 {
 }
 
 .toolbar {
+  flex-wrap: wrap;
   gap: 14px;
   margin-bottom: 14px;
   padding: 16px;
@@ -291,7 +292,17 @@ h3 {
 }
 
 .filter-field {
-  flex: 0 0 220px;
+  flex: 1 1 170px;
+  min-width: 0;
+}
+
+.workbook-filter {
+  flex-basis: 260px;
+}
+
+.toolbar .workbook-chip {
+  flex-basis: 100%;
+  min-height: 28px;
 }
 
 .search-field input,

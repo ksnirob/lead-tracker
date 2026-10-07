@@ -26,6 +26,7 @@
           <input type="checkbox" id="autoSaveToggle" checked>
           <span>Auto-save</span>
         </label>
+        <button class="secondary-button" id="openFolderButton" type="button">Open Excel folder</button>
         <button class="secondary-button" id="openFileButton" type="button">Open Excel files</button>
         <button class="primary-button" id="saveButton" type="button" disabled>Save</button>
         <button class="secondary-button" id="downloadButton" type="button" disabled>Download copy</button>
@@ -57,6 +58,14 @@
           <option value="Win">Win</option>
           <option value="Lost">Lost</option>
         </select>
+      </label>
+      <label class="filter-field">
+        <span>Country</span>
+        <select id="countryFilter"><option value="all">All Country</option></select>
+      </label>
+      <label class="filter-field workbook-filter">
+        <span>Workbook</span>
+        <select id="workbookFilter"><option value="all">All workbooks</option></select>
       </label>
       <div class="workbook-chip" id="workbookChip">Place your workbook in the excel folder, or choose it once.</div>
     </section>
