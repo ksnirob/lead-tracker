@@ -22,6 +22,7 @@
       </div>
       <div class="file-actions">
         <span class="save-state" id="saveState">No workbook selected</span>
+        <button class="primary-button" id="enableSavingButton" type="button" hidden>Enable saving</button>
         <label class="autosave-control" title="Save changes automatically when your browser has write permission">
           <input type="checkbox" id="autoSaveToggle" checked>
           <span>Auto-save</span>
@@ -146,6 +147,7 @@
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Batch</th>
                 <th>Website</th>
                 <th>Email</th>
                 <th>Phone</th>
@@ -158,7 +160,7 @@
             </thead>
             <tbody id="leadsBody">
               <tr>
-                <td colspan="9" class="empty-state">Loading workbook...</td>
+                <td colspan="10" class="empty-state">Loading workbook...</td>
               </tr>
             </tbody>
           </table>

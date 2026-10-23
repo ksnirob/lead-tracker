@@ -658,6 +658,12 @@ h3 {
   font-size: 13px;
 }
 
+.sheet-batch {
+  white-space: nowrap;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .excel-table th {
   position: sticky;
   top: 0;

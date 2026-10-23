@@ -91,6 +91,7 @@ const dom = {
   fileInput: document.getElementById('fileInput'),
   autoSaveToggle: document.getElementById('autoSaveToggle'),
   saveState: document.getElementById('saveState'),
+  enableSavingButton: document.getElementById('enableSavingButton'),
   workbookChip: document.getElementById('workbookChip'),
   pipelineSummary: document.getElementById('pipelineSummary'),
   pipelineTrack: document.getElementById('pipelineTrack'),
@@ -119,6 +120,7 @@ const dom = {
 let leads = [];
 let workbookSources = [];
 let discoveredCountries = [];
+let excelDirectoryHandle = null;
 let dirty = false;
 const dirtySourceIds = new Set();
 let autosaveTimer = null;
@@ -501,6 +503,7 @@ async function restoreExcelDirectory() {
     request.onerror = () => reject(request.error);
   });
   if (!directory || await directory.queryPermission({ mode: 'read' }) !== 'granted') return false;
+  excelDirectoryHandle = directory;
   await readExcelDirectory(directory);
   return true;
 }
@@ -511,7 +514,19 @@ async function openExcelDirectory() {
     return;
   }
   const directory = await window.showDirectoryPicker({ id: 'lead-tracker-excel', mode: 'readwrite' });
-  await readExcelDirectory(directory);
+  if (dirty) {
+    // Connect existing rows to their original files without reloading unsaved edits.
+    const handles = await Promise.all(workbookSources.map(async source => {
+      const parts = (source.path || (source.country ? `${source.country}/${source.name}` : source.name)).split('/');
+      let folder = directory;
+      for (const part of parts.slice(0, -1)) folder = await folder.getDirectoryHandle(part);
+      return folder.getFileHandle(parts[parts.length - 1]);
+    }));
+    workbookSources.forEach((source, index) => { source.handle = handles[index]; });
+  } else {
+    await readExcelDirectory(directory);
+  }
+  excelDirectoryHandle = directory;
   const db = await openDb();
   await new Promise((resolve, reject) => {
     const tx = db.transaction(HANDLE_STORE, 'readwrite');
@@ -519,13 +534,14 @@ async function openExcelDirectory() {
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
   });
+  if (dirty && dom.autoSaveToggle.checked) await saveWorkbook({ quiet: true });
 }
 
 async function loadDefaultWorkbook() {
   if (window.location.protocol === 'file:') {
     setStatus('Click Open Excel folder to connect countries and workbooks');
     dom.workbookChip.textContent = 'Excel folder is not connected';
-    dom.leadsBody.innerHTML = '<tr><td colspan="9" class="empty-state">Click Open Excel folder and select the excel folder to load every country and workbook.</td></tr>';
+    dom.leadsBody.innerHTML = '<tr><td colspan="10" class="empty-state">Click Open Excel folder and select the excel folder to load every country and workbook.</td></tr>';
     dom.leadDetail.innerHTML = '<div class="empty-state">Choose the Excel file once to edit lead details here.</div>';
     return false;
   }
@@ -552,7 +568,7 @@ async function loadDefaultWorkbook() {
     console.error('Default workbook load failed:', error);
     setStatus('Excel folder file did not load');
     dom.workbookChip.textContent = 'Excel folder';
-    dom.leadsBody.innerHTML = '<tr><td colspan="9" class="empty-state">Could not load the Excel folder automatically. Start the local server from this folder, then open http://127.0.0.1:8000.</td></tr>';
+    dom.leadsBody.innerHTML = '<tr><td colspan="10" class="empty-state">Could not load the Excel folder automatically. Start the local server from this folder, then open http://127.0.0.1:8000.</td></tr>';
     dom.leadDetail.innerHTML = '<div class="empty-state">Workbook details will appear here after loading.</div>';
     return false;
   }
@@ -560,6 +576,7 @@ async function loadDefaultWorkbook() {
 
 function setStatus(message) {
   dom.saveState.textContent = message;
+  dom.enableSavingButton.hidden = !/Changes not saved/.test(message);
 }
 
 function filteredLeads() {
@@ -588,7 +605,7 @@ function render() {
   renderStats();
 
   if (!visible.length) {
-    dom.leadsBody.innerHTML = `<tr><td colspan="9" class="empty-state">${leads.length ? 'No leads match the current search or filter.' : 'Open your Excel workbook to load leads.'}</td></tr>`;
+    dom.leadsBody.innerHTML = `<tr><td colspan="10" class="empty-state">${leads.length ? 'No leads match the current search or filter.' : 'Open your Excel workbook to load leads.'}</td></tr>`;
     dom.leadDetail.innerHTML = '<div class="empty-state">No selected lead.</div>';
     return;
   }
@@ -648,12 +665,16 @@ function renderPipeline(totals, totalCount) {
 function renderLeadRow(lead) {
   const website = asUrl(lead.website);
   const email = asMailto(lead.email);
+  const source = workbookSources.find(item => item.id === lead.sourceId);
+  const batchNumber = source?.name.match(/batch[_\s-]*(\d+)/i)?.[1];
+  const batchLabel = batchNumber ? `Batch ${batchNumber}` : source?.name || 'Not recorded';
 
   return `
     <tr class="${lead.id === selectedLeadId ? 'selected' : ''}" data-select="${lead.id}">
       <td>
         <strong class="sheet-name">${escapeHtml(lead.companyName || 'Unnamed lead')}</strong>
       </td>
+      <td class="sheet-batch" title="${escapeHtml(source?.path || source?.name || '')}">${escapeHtml(batchLabel)}</td>
       <td>${website ? `<a href="${escapeHtml(website)}" target="_blank" rel="noreferrer">${escapeHtml(shortUrl(lead.website))}</a>` : '<span class="empty-value">Not recorded</span>'}</td>
         <td>${email ? `<a href="${escapeHtml(email)}">${escapeHtml(lead.email)}</a>` : '<span class="empty-value">Not recorded</span>'}</td>
       <td>${escapeHtml(lead.contactNumber) || '<span class="empty-value">Not recorded</span>'}</td>
@@ -1035,10 +1056,11 @@ function escapeXml(value) {
     .replace(/"/g, '&quot;');
 }
 
-async function verifyFilePermission(handle, mode = 'readwrite') {
+async function verifyFilePermission(handle, mode = 'readwrite', request = true) {
   if (!handle || !handle.queryPermission) return false;
   const options = { mode };
   if ((await handle.queryPermission(options)) === 'granted') return true;
+  if (!request) return false;
   return (await handle.requestPermission(options)) === 'granted';
 }
 
@@ -1065,7 +1087,7 @@ async function chooseSaveHandle() {
 }
 
 async function saveWorkbook({ quiet = false } = {}) {
-  if (!leads.length) return;
+  if (!workbookSources.length) return;
   let output = null;
 
   try {
@@ -1075,10 +1097,19 @@ async function saveWorkbook({ quiet = false } = {}) {
       return;
     }
 
+    if (!quiet && dirtySources.some(source => !source.handle) && 'showDirectoryPicker' in window) {
+      await openExcelDirectory();
+      if (!dirty) return;
+    }
+
     const connectedSources = dirtySources.filter(source => source.handle);
     if (connectedSources.length === dirtySources.length && dirtySources.every(source => source.handle)) {
       for (const source of dirtySources) {
-        if (!await verifyFilePermission(source.handle, 'readwrite')) throw new Error(`Write permission denied for ${source.name}.`);
+        const permissionHandle = excelDirectoryHandle || source.handle;
+        if (!await verifyFilePermission(permissionHandle, 'readwrite', !quiet)) {
+          setStatus('Changes not saved. Click Save to allow Excel folder access.');
+          return;
+        }
         await writeWorkbookToHandle(source.handle, await buildWorkbookArray(source.id));
       }
       dirtySources.forEach(source => dirtySourceIds.delete(source.id));
@@ -1108,7 +1139,7 @@ async function saveWorkbook({ quiet = false } = {}) {
       dirty = false;
       setStatus(sourceId ? 'Downloaded updated workbook copy' : 'Downloaded combined updated copy');
     } else {
-      setStatus('Auto-save needs Open Excel permission');
+      setStatus('Changes not saved. Click Open Excel folder and select the excel folder.');
     }
   } catch (error) {
     if (error?.name === 'AbortError') {
@@ -1228,6 +1259,17 @@ function showMessage(id, field) {
   dom.modalMessage.textContent = lead[field] || '';
   dom.modal.showModal();
 }
+
+dom.enableSavingButton.addEventListener('click', async () => {
+  try {
+    if (workbookSources.some(source => dirtySourceIds.has(source.id) && !source.handle)) {
+      await openExcelDirectory();
+    }
+    if (dirty) await saveWorkbook();
+  } catch (error) {
+    if (error.name !== 'AbortError') setStatus(`Changes not saved. ${error.message}`);
+  }
+});
 
 dom.openFolderButton.addEventListener('click', async () => {
   try {
